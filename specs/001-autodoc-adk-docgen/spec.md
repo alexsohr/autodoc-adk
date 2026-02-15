@@ -245,6 +245,7 @@ External AI agents consume the autodoc system as an MCP server with two focused 
 - Q: What is the target search latency for documentation queries? → A: Search queries MUST return results within 3 seconds (p95).
 - Q: What embedding dimensions should pgvector use for wiki page content embeddings? → A: 3072 dimensions (OpenAI text-embedding-3-large for maximum quality).
 - Q: What is the expected scale ceiling for registered repositories and total wiki pages in v1? → A: No explicit ceiling. Design for horizontal scaling; limits deferred to infrastructure (database capacity, Kubernetes scaling).
+- Q: What is the acceptable recovery behavior if the system goes down? → A: No formal SLA in v1. On restart, stale RUNNING jobs are reconciled against Prefect and orphan temp dirs are cleaned. Recovery is best-effort.
 
 ## Success Criteria
 
@@ -270,6 +271,7 @@ External AI agents consume the autodoc system as an MCP server with two focused 
 - S3 (or compatible object storage) is available for archiving ADK sessions.
 - Content embeddings use 3072-dimensional vectors (e.g., OpenAI text-embedding-3-large). The embedding model is configurable via environment variable.
 - No hard ceiling on registered repositories or total wiki pages. The system is designed for horizontal scaling; capacity limits are managed at the infrastructure level (database sizing, Kubernetes autoscaling).
+- No formal availability SLA in v1. Recovery is best-effort: on restart, stale RUNNING jobs are reconciled against Prefect flow states (FR-023) and orphan temp directories are cleaned automatically.
 - API authentication is handled at the infrastructure layer (reverse proxy/API gateway) and is not part of the application.
 - Rate limiting is handled at the infrastructure layer (NGINX/cloud load balancer).
 - Webhook signature verification (HMAC) is deferred to implementation based on deployment context.
