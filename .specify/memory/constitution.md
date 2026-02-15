@@ -1,14 +1,12 @@
 <!--
 ## Sync Impact Report
-- **Version change**: 0.0.0 → 1.0.0 (initial ratification)
-- **Modified principles**: N/A (initial creation)
+- **Version change**: 1.0.0 → 1.1.0 (MINOR — new constraints added,
+  no existing principles changed)
+- **Modified principles**: None
 - **Added sections**:
-  - Core Principles: I–VII (Agent Isolation, Generator-Critic Separation,
-    Quality-Gated Output, Prefect-First Orchestration, Concrete Data Layer,
-    Structured Error Hierarchy, Observability by Design)
-  - Technology & Infrastructure Constraints
-  - Development Workflow & Quality Gates
-  - Governance
+  - Technology & Infrastructure Constraints: Ephemeral Workspaces,
+    Git Providers (GitHub + Bitbucket only), Provider Abstraction
+  - Development Workflow & Quality Gates: Job Idempotency
 - **Removed sections**: None
 - **Templates requiring updates**:
   - `.specify/templates/plan-template.md` — ✅ No changes needed
@@ -17,7 +15,13 @@
     (FR/NFR format is compatible)
   - `.specify/templates/tasks-template.md` — ✅ No changes needed
     (Phase-based structure is compatible)
-- **Follow-up TODOs**: None
+- **Follow-up TODOs**:
+  - ⚠ `specs/001-autodoc-adk-docgen/spec.md` references GitLab in
+    FR-001, SC-006, Key Entities (Repository), and Assumptions.
+    These MUST be updated to reflect GitHub + Bitbucket only.
+  - ⚠ `specs/001-autodoc-adk-docgen/spec.md` FR-016 requires S3
+    session archival. This MUST be replaced with ephemeral workspace
+    cleanup semantics (no S3 dependency).
 -->
 
 # AutoDoc ADK Constitution
@@ -123,9 +127,22 @@ preserving full visibility.
 - **AI Framework**: Google ADK with `DatabaseSessionService` for
   session persistence
 - **Orchestration**: Prefect 3 (work pools, not agents)
-- **Database**: PostgreSQL 16+ with pgvector extension
+- **Database**: PostgreSQL 18+ with pgvector extension
 - **ORM**: SQLAlchemy async + asyncpg
 - **API**: FastAPI with async endpoints
+- **Git Providers**: GitHub and Bitbucket only. Provider-specific
+  code (cloning, diff detection, PR creation) MUST be isolated
+  behind a common `GitProvider` interface with one concrete
+  implementation per provider. Workflow and agent code MUST depend
+  only on the `GitProvider` interface — never on provider-specific
+  clients directly
+- **Ephemeral Workspaces**: Each job MUST clone repositories into a
+  temporary directory scoped to that job. The workspace MUST be
+  deleted when the job completes (success or failure). ADK sessions
+  MUST be cleaned up from PostgreSQL after flow completion. No
+  external object storage (S3 or equivalent) is required. A
+  scheduled cleanup task MUST remove orphaned `autodoc_*` temp
+  directories older than 1 hour to handle crashed workers
 - **Deployment**: Three Docker images (API, Worker, Flow Runner);
   Kubernetes in production, process work pool for local dev
 - **Configuration**: Pydantic `BaseSettings` for env var management;
@@ -150,6 +167,11 @@ preserving full visibility.
   pytest with test database
 - **Transaction discipline**: Database writes MUST occur within
   Prefect task boundaries. No writes outside of task context
+- **Job idempotency**: Duplicate job requests for the same
+  `(repository_id, branch, dry_run)` MUST return the existing active
+  job instead of creating a new one. This MUST be enforced at the
+  database level (unique partial index on active jobs) to prevent
+  race conditions
 - **Config validation**: `.autodoc.yaml` parsing MUST warn on unknown
   keys and fail on invalid values. Validation results MUST be stored
   in the job record
@@ -174,4 +196,4 @@ MUST verify compliance with these principles. Amendments require:
 Complexity beyond what these principles prescribe MUST be explicitly
 justified in the relevant plan or spec document.
 
-**Version**: 1.0.0 | **Ratified**: 2026-02-15 | **Last Amended**: 2026-02-15
+**Version**: 1.1.0 | **Ratified**: 2026-02-15 | **Last Amended**: 2026-02-15
