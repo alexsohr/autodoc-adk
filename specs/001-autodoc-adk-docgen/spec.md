@@ -189,7 +189,7 @@ External AI agents consume the autodoc system as an MCP server with two focused 
 - **FR-003**: System MUST support incremental documentation updates — detect changes via provider compare API, regenerate only affected pages, merge with unchanged pages, create PR targeting the configured PR branch.
 - **FR-003a**: System MUST automatically determine whether a job is full or incremental based on whether a previous commit SHA is stored for the repository in autodoc. If no commit SHA exists, the system performs full generation; if a commit SHA exists, it performs incremental update.
 - **FR-003b**: System MUST support a `force` flag on the `POST /jobs` API that triggers full documentation generation regardless of whether changes exist or a previous commit SHA is stored.
-- **FR-004**: System MUST implement a Generator & Critic loop pattern where each generating agent (StructureExtractor, PageGenerator, ReadmeDistiller) pairs a Generator sub-agent with a separate Critic sub-agent for independent quality evaluation against weighted rubrics.
+- **FR-004**: System MUST implement a Generator & Critic loop pattern where each generating agent (StructureExtractor, PageGenerator, ReadmeDistiller) pairs a Generator sub-agent with a separate Critic sub-agent for independent quality evaluation against weighted rubrics. Default quality threshold is 7.0/10 with up to 3 attempts per generation.
 - **FR-005**: System MUST support configurable Critic models separate from Generator models to avoid self-reinforcing evaluation bias.
 - **FR-006**: System MUST produce two output formats: a structured wiki (sections + pages in PostgreSQL) and a distilled README pushed via pull request.
 - **FR-007**: System MUST support per-scope `.autodoc.yaml` configuration for customizing include/exclude patterns, documentation style, custom instructions, README preferences, and PR settings.
@@ -202,17 +202,17 @@ External AI agents consume the autodoc system as an MCP server with two focused 
 - **FR-014**: System MUST receive Git provider push/merge webhooks and automatically determine whether to trigger full or incremental documentation generation based on whether a previous commit SHA is stored for the repository. Webhooks MUST only trigger jobs for branches in the repository's configured documentation branches.
 - **FR-015**: System MUST persist ADK agent sessions to PostgreSQL via DatabaseSessionService, enabling Critic feedback to be fed back to the Generator through conversation history across retry attempts.
 - **FR-016**: System MUST archive ADK sessions to S3 after each flow run and delete them from PostgreSQL.
-- **FR-017**: System MUST track the best attempt (highest score) across retries, with configurable overall minimum score floor and per-criterion minimum scores.
+- **FR-017**: System MUST track the best attempt (highest score) across retries, with configurable overall minimum score floor (default 5.0/10) and per-criterion minimum scores.
 - **FR-018**: System MUST aggregate token usage and quality metrics from all AgentResults at the end of each job.
 - **FR-019**: System MUST support dry-run mode for both full and incremental flows, extracting structure without generating content.
-- **FR-020**: System MUST enforce repository size limits (MAX_TOTAL_FILES, MAX_FILE_SIZE, MAX_REPO_SIZE) during file tree scanning.
+- **FR-020**: System MUST enforce repository size limits during file tree scanning: MAX_REPO_SIZE=500MB, MAX_TOTAL_FILES=5,000, MAX_FILE_SIZE=1MB.
 - **FR-021**: System MUST retain up to 3 wiki structure versions per `(repository_id, branch, scope_path)`, deleting the oldest when a 4th is created.
 - **FR-022**: System MUST close stale autodoc PRs before creating new ones for the same branch.
 - **FR-023**: System MUST reconcile stale RUNNING jobs against Prefect flow states on startup.
 - **FR-024**: System MUST support scope overlap auto-exclusion where parent scopes automatically exclude child scope directories with their own `.autodoc.yaml`.
 - **FR-025**: System MUST support updating and deleting repositories with cascading deletes of associated documentation, jobs, and wiki structures.
 - **FR-026**: System MUST enforce a 1-hour hard timeout on all job types (full and incremental). When a pod reaches the timeout, it MUST update the job status to FAILED (with a timeout reason) before the pod is terminated.
-- **FR-027**: System MUST enforce a configurable global concurrency limit on simultaneous running jobs (e.g., `MAX_CONCURRENT_JOBS`). Jobs exceeding the limit remain in PENDING status until a slot is available. Managed via Prefect's native concurrency limits.
+- **FR-027**: System MUST enforce a configurable global concurrency limit on simultaneous running jobs (default MAX_CONCURRENT_JOBS=50). Jobs exceeding the limit remain in PENDING status until a slot is available. Managed via Prefect's native concurrency limits.
 
 ### Key Entities
 
@@ -233,6 +233,9 @@ External AI agents consume the autodoc system as an MCP server with two focused 
 - Q: Should the system limit how many jobs can run concurrently? → A: Global concurrency limit only (e.g., max N concurrent jobs system-wide). No per-repo limit.
 - Q: What level of token protection is expected for repository access tokens? → A: No encryption in v1. Tokens stored as plaintext; repositories are trusted. Encryption deferred to a future version.
 - Q: Which capabilities are explicitly not in scope for v1? → A: All out of scope: UI dashboard, multi-language docs, PDF export, self-hosted Git (Gitea/etc), user accounts/RBAC.
+- Q: What concrete values should the repository size limits have? → A: MAX_REPO_SIZE=500MB, MAX_TOTAL_FILES=5,000, MAX_FILE_SIZE=1MB.
+- Q: What are the default quality score threshold and minimum score floor for the Generator & Critic loop? → A: Default quality threshold=7.0/10, minimum score floor=5.0/10, max_attempts=3.
+- Q: What is the default global concurrency limit for simultaneous running jobs? → A: MAX_CONCURRENT_JOBS=50.
 
 ## Success Criteria
 
