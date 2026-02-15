@@ -1,7 +1,8 @@
 <!--
 ## Sync Impact Report
-- **Version change**: 1.0.0 → 1.1.0 (MINOR — new constraints added,
-  no existing principles changed)
+- **Version change**: 1.0.0 → 1.1.0 → 1.2.0 (MINOR — Ephemeral
+  Workspaces amended to permit S3 for session archival; GitLab
+  follow-up TODOs resolved)
 - **Modified principles**: None
 - **Added sections**:
   - Technology & Infrastructure Constraints: Ephemeral Workspaces,
@@ -16,12 +17,12 @@
   - `.specify/templates/tasks-template.md` — ✅ No changes needed
     (Phase-based structure is compatible)
 - **Follow-up TODOs**:
-  - ⚠ `specs/001-autodoc-adk-docgen/spec.md` references GitLab in
-    FR-001, SC-006, Key Entities (Repository), and Assumptions.
-    These MUST be updated to reflect GitHub + Bitbucket only.
-  - ⚠ `specs/001-autodoc-adk-docgen/spec.md` FR-016 requires S3
-    session archival. This MUST be replaced with ephemeral workspace
-    cleanup semantics (no S3 dependency).
+  - ✅ `specs/001-autodoc-adk-docgen/spec.md` GitLab references
+    removed from FR-001, SC-006, Key Entities, Out of Scope, and
+    Assumptions. Spec now reflects GitHub + Bitbucket only.
+  - ✅ `specs/001-autodoc-adk-docgen/spec.md` FR-016 S3 session
+    archival retained. Constitution amended to permit S3 for ADK
+    session archival only (Ephemeral Workspaces constraint updated).
 -->
 
 # AutoDoc ADK Constitution
@@ -139,9 +140,10 @@ preserving full visibility.
 - **Ephemeral Workspaces**: Each job MUST clone repositories into a
   temporary directory scoped to that job. The workspace MUST be
   deleted when the job completes (success or failure). ADK sessions
-  MUST be cleaned up from PostgreSQL after flow completion. No
-  external object storage (S3 or equivalent) is required. A
-  scheduled cleanup task MUST remove orphaned `autodoc_*` temp
+  MUST be archived to S3 (or compatible object storage) after each
+  flow run and then deleted from PostgreSQL. S3 is used exclusively
+  for session archival — no other application data is stored there.
+  A scheduled cleanup task MUST remove orphaned `autodoc_*` temp
   directories older than 1 hour to handle crashed workers
 - **Deployment**: Three Docker images (API, Worker, Flow Runner);
   Kubernetes in production, process work pool for local dev
@@ -196,4 +198,4 @@ MUST verify compliance with these principles. Amendments require:
 Complexity beyond what these principles prescribe MUST be explicitly
 justified in the relevant plan or spec document.
 
-**Version**: 1.1.0 | **Ratified**: 2026-02-15 | **Last Amended**: 2026-02-15
+**Version**: 1.2.0 | **Ratified**: 2026-02-15 | **Last Amended**: 2026-02-15

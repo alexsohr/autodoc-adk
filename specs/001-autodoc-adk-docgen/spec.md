@@ -176,7 +176,7 @@ External AI agents consume the autodoc system as an MCP server with two focused 
 - **UI dashboard** — no web interface for browsing documentation; consumption is via API, MCP, and PRs
 - **Multi-language documentation** — output is English only
 - **PDF export** — no document format conversion
-- **Self-hosted Git providers** — no Gitea, Gogs, or other self-hosted Git support; only GitHub, GitLab, Bitbucket
+- **Self-hosted Git providers and GitLab** — no Gitea, Gogs, GitLab, or other self-hosted Git support; only GitHub and Bitbucket
 - **User accounts and RBAC** — no application-level authentication or role-based access control; auth is deferred to infrastructure
 - **Token encryption** — access tokens stored as plaintext; encryption deferred to a future version
 
@@ -184,7 +184,7 @@ External AI agents consume the autodoc system as an MCP server with two focused 
 
 ### Functional Requirements
 
-- **FR-001**: System MUST allow users to register repositories (GitHub, GitLab, Bitbucket) with optional access tokens (stored as plaintext in v1) via a REST API. During registration, users MUST specify a 1:1 mapping of documentation branches to PR target branches and designate exactly one branch as the **public branch** whose wiki is used for all search queries.
+- **FR-001**: System MUST allow users to register repositories (GitHub, Bitbucket) with optional access tokens (stored as plaintext in v1) via a REST API. During registration, users MUST specify a 1:1 mapping of documentation branches to PR target branches and designate exactly one branch as the **public branch** whose wiki is used for all search queries.
 - **FR-002**: System MUST support full documentation generation — clone, scan/prune file tree, extract structure, generate pages with quality evaluation, distill README, create PR targeting the configured PR branch.
 - **FR-003**: System MUST support incremental documentation updates — detect changes via provider compare API, regenerate only affected pages, merge with unchanged pages, create PR targeting the configured PR branch.
 - **FR-003a**: System MUST automatically determine whether a job is full or incremental based on whether a previous commit SHA is stored for the repository in autodoc. If no commit SHA exists, the system performs full generation; if a commit SHA exists, it performs incremental update.
@@ -197,7 +197,7 @@ External AI agents consume the autodoc system as an MCP server with two focused 
 - **FR-009**: System MUST provide text search (PostgreSQL tsvector), semantic search (pgvector), and hybrid search (Reciprocal Rank Fusion) across wiki pages via API and MCP (`query_documents` tool). Search queries MUST default to the repository's designated public branch.
 - **FR-010**: System MUST create pull requests containing generated READMEs, targeting the PR branch configured during repository registration, with configurable reviewers and auto-merge settings.
 - **FR-011**: System MUST expose exactly two MCP tools for external agents: `find_repository` (discover registered repositories by name, URL, or partial match) and `query_documents` (search documentation for a repository discovered via `find_repository`).
-- **FR-012**: System MUST support job management: status tracking, cancellation (Prefect native), retry from last successful task, and webhook callbacks on completion/failure.
+- **FR-012**: System MUST support job management: status tracking, cancellation (Prefect native), retry from last successful task (FAILED jobs only — COMPLETED and CANCELLED are terminal), and webhook callbacks on completion/failure.
 - **FR-013**: System MUST enforce job idempotency — duplicate requests for the same `(repository_id, branch, dry_run)` return the existing active job.
 - **FR-014**: System MUST receive Git provider push/merge webhooks and automatically determine whether to trigger full or incremental documentation generation based on whether a previous commit SHA is stored for the repository. Webhooks MUST only trigger jobs for branches in the repository's configured documentation branches.
 - **FR-015**: System MUST persist ADK agent sessions to PostgreSQL via DatabaseSessionService, enabling Critic feedback to be fed back to the Generator through conversation history across retry attempts.
@@ -216,10 +216,10 @@ External AI agents consume the autodoc system as an MCP server with two focused 
 
 ### Key Entities
 
-- **Repository**: A registered Git repository (GitHub/GitLab/Bitbucket) with URL, provider, optional access token (plaintext in v1), a 1:1 mapping of documentation branches to PR target branches (e.g., `{main: main, develop: develop}`), and a designated **public branch** — the single branch whose wiki is returned by all search queries. Multiple branches can trigger documentation generation, but only the public branch's documentation is searchable. Uniquely identified by URL.
-- **Job**: A documentation generation task tied to a repository and branch. Tracks status (PENDING, RUNNING, COMPLETED, FAILED, CANCELLED), resolved mode (full/incremental — determined automatically based on whether a previous commit SHA exists), force flag, quality report, token usage, and PR URL.
+- **Repository**: A registered Git repository (GitHub/Bitbucket) with URL, provider, optional access token (plaintext in v1), a 1:1 mapping of documentation branches to PR target branches (e.g., `{main: main, develop: develop}`), and a designated **public branch** — the single branch whose wiki is returned by all search queries. Multiple branches can trigger documentation generation, but only the public branch's documentation is searchable. Uniquely identified by URL.
+- **Job**: A documentation generation task tied to a repository and branch. Tracks status (PENDING, RUNNING, COMPLETED, FAILED, CANCELLED), resolved mode (full/incremental — determined automatically based on whether a previous commit SHA exists), force flag, quality report, token usage, and PR URL. Valid state transitions: PENDING→RUNNING→COMPLETED|FAILED|CANCELLED. Only FAILED jobs may be retried (transitions back to PENDING). COMPLETED and CANCELLED are terminal states with no re-entry.
 - **WikiStructure**: A versioned documentation structure for a specific `(repository_id, branch, scope_path)`. Contains sections hierarchy and page specifications. Up to 3 versions retained per scope.
-- **WikiPage**: A single generated documentation page belonging to a WikiStructure. Contains markdown content, content embedding (pgvector), quality score, source file references, and code references. Cascade-deleted when its WikiStructure is removed.
+- **WikiPage**: A single generated documentation page belonging to a WikiStructure. Contains markdown content, content embedding (pgvector vector of the full markdown body, generated at page creation/update time), quality score, source file references, and code references. Cascade-deleted when its WikiStructure is removed.
 - **AutodocConfig**: Per-scope configuration from `.autodoc.yaml` defining include/exclude patterns, style preferences, custom instructions, README settings, and PR preferences.
 - **AgentResult**: Wrapper for agent output carrying evaluation history, attempt count, final score, quality gate status, and token usage.
 - **EvaluationResult**: Critic output with weighted score, pass/fail status, per-criterion scores, and improvement feedback.
@@ -233,6 +233,10 @@ External AI agents consume the autodoc system as an MCP server with two focused 
 - Q: Should the system limit how many jobs can run concurrently? → A: Global concurrency limit only (e.g., max N concurrent jobs system-wide). No per-repo limit.
 - Q: What level of token protection is expected for repository access tokens? → A: No encryption in v1. Tokens stored as plaintext; repositories are trusted. Encryption deferred to a future version.
 - Q: Which capabilities are explicitly not in scope for v1? → A: All out of scope: UI dashboard, multi-language docs, PDF export, self-hosted Git (Gitea/etc), user accounts/RBAC.
+- Q: Should spec be aligned with constitution to remove GitLab support? → A: Yes, remove GitLab. Spec aligned to constitution — GitHub + Bitbucket only.
+- Q: Should FR-016 (S3 session archival) be removed per constitution's no-S3 ephemeral workspace constraint? → A: No. Keep S3 for archiving ADK agent session data. Constitution to be amended to permit S3 for session archival only.
+- Q: What are the valid job state transitions? → A: Strict linear: PENDING→RUNNING→COMPLETED/FAILED/CANCELLED. Only FAILED jobs can be retried (→PENDING). No other backward transitions.
+- Q: What content is embedded for semantic search? → A: Full page content — embed the entire markdown body of each WikiPage. Embeddings generated at page creation/update time.
 - Q: What concrete values should the repository size limits have? → A: MAX_REPO_SIZE=500MB, MAX_TOTAL_FILES=5,000, MAX_FILE_SIZE=1MB.
 - Q: What are the default quality score threshold and minimum score floor for the Generator & Critic loop? → A: Default quality threshold=7.0/10, minimum score floor=5.0/10, max_attempts=3.
 - Q: What is the default global concurrency limit for simultaneous running jobs? → A: MAX_CONCURRENT_JOBS=50.
@@ -246,7 +250,7 @@ External AI agents consume the autodoc system as an MCP server with two focused 
 - **SC-003**: Quality-gated generation produces documentation where the average quality score across all pages exceeds the configured threshold in at least 90% of jobs.
 - **SC-004**: Documentation search returns relevant results for natural language queries, with hybrid search outperforming text-only or semantic-only search in result relevance.
 - **SC-005**: Monorepo support correctly discovers and independently processes multiple documentation scopes, with no cross-scope contamination in generated content.
-- **SC-006**: The system handles repositories across all three supported providers (GitHub, GitLab, Bitbucket) for cloning, diff detection, and PR creation.
+- **SC-006**: The system handles repositories across both supported providers (GitHub, Bitbucket) for cloning, diff detection, and PR creation.
 - **SC-007**: Job management operations (cancel, retry, status check) complete within 2 seconds of the API call.
 - **SC-008**: Webhook-driven incremental updates trigger within 5 seconds of receiving a push event.
 - **SC-009**: The system maintains at most 3 documentation versions per scope without manual intervention.
@@ -257,7 +261,7 @@ External AI agents consume the autodoc system as an MCP server with two focused 
 - Google ADK's `DatabaseSessionService` supports PostgreSQL for session persistence.
 - Google ADK's built-in OpenTelemetry integration provides automatic tracing of agent execution, LLM calls, and tool usage.
 - Prefect 3 supports the work pool, deployment, and concurrency limit patterns described (process pool for dev, Kubernetes pool for prod).
-- Git providers (GitHub, GitLab, Bitbucket) expose compare APIs that return changed file lists between two commits.
+- Git providers (GitHub, Bitbucket) expose compare APIs that return changed file lists between two commits.
 - S3 (or compatible object storage) is available for archiving ADK sessions.
 - API authentication is handled at the infrastructure layer (reverse proxy/API gateway) and is not part of the application.
 - Rate limiting is handled at the infrastructure layer (NGINX/cloud load balancer).
