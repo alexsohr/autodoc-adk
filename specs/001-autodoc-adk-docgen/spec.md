@@ -170,6 +170,7 @@ External AI agents consume the autodoc system as an MCP server with two focused 
 - What happens when an orphaned temp directory exists from a crashed worker? A scheduled cleanup task removes `autodoc_*` temp dirs older than 1 hour.
 - What happens when the Prefect server is unreachable during job creation? The health check reports `unhealthy` status; job creation fails gracefully.
 - What happens when pruning removes >90% of files in scan_file_tree? A warning is emitted but processing continues.
+- What happens when a Git provider API call fails (rate limit, timeout, auth rejection)? The failure is classified as a `TransientError` and retried by Prefect up to a fixed limit. If retries are exhausted, the job is marked FAILED.
 
 ## Out of Scope (v1)
 
@@ -219,7 +220,7 @@ External AI agents consume the autodoc system as an MCP server with two focused 
 - **Repository**: A registered Git repository (GitHub/Bitbucket) with URL, provider, optional access token (plaintext in v1), a 1:1 mapping of documentation branches to PR target branches (e.g., `{main: main, develop: develop}`), and a designated **public branch** — the single branch whose wiki is returned by all search queries. Multiple branches can trigger documentation generation, but only the public branch's documentation is searchable. Uniquely identified by URL.
 - **Job**: A documentation generation task tied to a repository and branch. Tracks status (PENDING, RUNNING, COMPLETED, FAILED, CANCELLED), resolved mode (full/incremental — determined automatically based on whether a previous commit SHA exists), force flag, quality report, token usage, and PR URL. Valid state transitions: PENDING→RUNNING→COMPLETED|FAILED|CANCELLED. Only FAILED jobs may be retried (transitions back to PENDING). COMPLETED and CANCELLED are terminal states with no re-entry.
 - **WikiStructure**: A versioned documentation structure for a specific `(repository_id, branch, scope_path)`. Contains sections hierarchy and page specifications. Up to 3 versions retained per scope.
-- **WikiPage**: A single generated documentation page belonging to a WikiStructure. Contains markdown content, content embedding (pgvector vector of the full markdown body, generated at page creation/update time), quality score, source file references, and code references. Cascade-deleted when its WikiStructure is removed.
+- **WikiPage**: A single generated documentation page belonging to a WikiStructure. Contains markdown content, content embedding (pgvector vector(3072) of the full markdown body, generated at page creation/update time), quality score, source file references, and code references. Cascade-deleted when its WikiStructure is removed.
 - **AutodocConfig**: Per-scope configuration from `.autodoc.yaml` defining include/exclude patterns, style preferences, custom instructions, README settings, and PR preferences.
 - **AgentResult**: Wrapper for agent output carrying evaluation history, attempt count, final score, quality gate status, and token usage.
 - **EvaluationResult**: Critic output with weighted score, pass/fail status, per-criterion scores, and improvement feedback.
@@ -240,6 +241,10 @@ External AI agents consume the autodoc system as an MCP server with two focused 
 - Q: What concrete values should the repository size limits have? → A: MAX_REPO_SIZE=500MB, MAX_TOTAL_FILES=5,000, MAX_FILE_SIZE=1MB.
 - Q: What are the default quality score threshold and minimum score floor for the Generator & Critic loop? → A: Default quality threshold=7.0/10, minimum score floor=5.0/10, max_attempts=3.
 - Q: What is the default global concurrency limit for simultaneous running jobs? → A: MAX_CONCURRENT_JOBS=50.
+- Q: How should the system handle Git provider API failures during a job? → A: Provider API failures (clone rate-limit, compare API timeout, PR creation rejected) are TransientErrors retried by Prefect up to a fixed limit, then job fails.
+- Q: What is the target search latency for documentation queries? → A: Search queries MUST return results within 3 seconds (p95).
+- Q: What embedding dimensions should pgvector use for wiki page content embeddings? → A: 3072 dimensions (OpenAI text-embedding-3-large for maximum quality).
+- Q: What is the expected scale ceiling for registered repositories and total wiki pages in v1? → A: No explicit ceiling. Design for horizontal scaling; limits deferred to infrastructure (database capacity, Kubernetes scaling).
 
 ## Success Criteria
 
@@ -248,7 +253,7 @@ External AI agents consume the autodoc system as an MCP server with two focused 
 - **SC-001**: Users can register a repository and receive generated documentation (wiki pages + README PR) from a single API call. All jobs (full and incremental) have a 1-hour hard timeout enforced at the pod level.
 - **SC-002**: Incremental documentation updates regenerate only affected pages, completing faster than full generation for small changesets (fewer than 10% of files changed), within the same 1-hour timeout.
 - **SC-003**: Quality-gated generation produces documentation where the average quality score across all pages exceeds the configured threshold in at least 90% of jobs.
-- **SC-004**: Documentation search returns relevant results for natural language queries, with hybrid search outperforming text-only or semantic-only search in result relevance.
+- **SC-004**: Documentation search returns relevant results for natural language queries within 3 seconds (p95), with hybrid search outperforming text-only or semantic-only search in result relevance.
 - **SC-005**: Monorepo support correctly discovers and independently processes multiple documentation scopes, with no cross-scope contamination in generated content.
 - **SC-006**: The system handles repositories across both supported providers (GitHub, Bitbucket) for cloning, diff detection, and PR creation.
 - **SC-007**: Job management operations (cancel, retry, status check) complete within 2 seconds of the API call.
@@ -263,6 +268,8 @@ External AI agents consume the autodoc system as an MCP server with two focused 
 - Prefect 3 supports the work pool, deployment, and concurrency limit patterns described (process pool for dev, Kubernetes pool for prod).
 - Git providers (GitHub, Bitbucket) expose compare APIs that return changed file lists between two commits.
 - S3 (or compatible object storage) is available for archiving ADK sessions.
+- Content embeddings use 3072-dimensional vectors (e.g., OpenAI text-embedding-3-large). The embedding model is configurable via environment variable.
+- No hard ceiling on registered repositories or total wiki pages. The system is designed for horizontal scaling; capacity limits are managed at the infrastructure level (database sizing, Kubernetes autoscaling).
 - API authentication is handled at the infrastructure layer (reverse proxy/API gateway) and is not part of the application.
 - Rate limiting is handled at the infrastructure layer (NGINX/cloud load balancer).
 - Webhook signature verification (HMAC) is deferred to implementation based on deployment context.
