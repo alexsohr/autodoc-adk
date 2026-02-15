@@ -18,7 +18,7 @@ A developer registers a repository (specifying the branches to document and the 
 **Acceptance Scenarios**:
 
 1. **Given** a registered public repository with no previous commit SHA stored in autodoc, **When** a user triggers `POST /jobs`, **Then** the system determines this is a full generation, creates a job (PENDING), clones the repository, extracts documentation structure, generates wiki pages with quality evaluation, distills a README, stores wiki pages in PostgreSQL, and creates a pull request containing the README targeting the configured PR branch.
-2. **Given** a registered private repository with an access token, **When** a user triggers generation, **Then** the system authenticates the clone and PR creation using the stored encrypted token.
+2. **Given** a registered private repository with an access token, **When** a user triggers generation, **Then** the system authenticates the clone and PR creation using the stored access token.
 3. **Given** a job is in progress, **When** a user queries `GET /jobs/{id}`, **Then** the response includes the current status, and upon completion includes `quality_report`, `token_usage`, and `pull_request_url`.
 4. **Given** a repository with no `.autodoc.yaml`, **When** full generation is triggered, **Then** sensible defaults are applied (all files included, junior-developer audience, tutorial tone, comprehensive detail).
 5. **Given** a repository with existing documentation and no code changes since the last run, **When** a user triggers `POST /jobs` with `force: true`, **Then** the system performs a full documentation generation regardless of whether changes exist.
@@ -171,11 +171,20 @@ External AI agents consume the autodoc system as an MCP server with two focused 
 - What happens when the Prefect server is unreachable during job creation? The health check reports `unhealthy` status; job creation fails gracefully.
 - What happens when pruning removes >90% of files in scan_file_tree? A warning is emitted but processing continues.
 
+## Out of Scope (v1)
+
+- **UI dashboard** — no web interface for browsing documentation; consumption is via API, MCP, and PRs
+- **Multi-language documentation** — output is English only
+- **PDF export** — no document format conversion
+- **Self-hosted Git providers** — no Gitea, Gogs, or other self-hosted Git support; only GitHub, GitLab, Bitbucket
+- **User accounts and RBAC** — no application-level authentication or role-based access control; auth is deferred to infrastructure
+- **Token encryption** — access tokens stored as plaintext; encryption deferred to a future version
+
 ## Requirements
 
 ### Functional Requirements
 
-- **FR-001**: System MUST allow users to register repositories (GitHub, GitLab, Bitbucket) with optional encrypted access tokens via a REST API. During registration, users MUST specify the branches to generate documentation for and the target branches for pull requests.
+- **FR-001**: System MUST allow users to register repositories (GitHub, GitLab, Bitbucket) with optional access tokens (stored as plaintext in v1) via a REST API. During registration, users MUST specify a 1:1 mapping of documentation branches to PR target branches and designate exactly one branch as the **public branch** whose wiki is used for all search queries.
 - **FR-002**: System MUST support full documentation generation — clone, scan/prune file tree, extract structure, generate pages with quality evaluation, distill README, create PR targeting the configured PR branch.
 - **FR-003**: System MUST support incremental documentation updates — detect changes via provider compare API, regenerate only affected pages, merge with unchanged pages, create PR targeting the configured PR branch.
 - **FR-003a**: System MUST automatically determine whether a job is full or incremental based on whether a previous commit SHA is stored for the repository in autodoc. If no commit SHA exists, the system performs full generation; if a commit SHA exists, it performs incremental update.
@@ -185,7 +194,7 @@ External AI agents consume the autodoc system as an MCP server with two focused 
 - **FR-006**: System MUST produce two output formats: a structured wiki (sections + pages in PostgreSQL) and a distilled README pushed via pull request.
 - **FR-007**: System MUST support per-scope `.autodoc.yaml` configuration for customizing include/exclude patterns, documentation style, custom instructions, README preferences, and PR settings.
 - **FR-008**: System MUST support monorepo documentation via auto-discovery of multiple `.autodoc.yaml` files, processing each scope in parallel with independent wiki structures and READMEs.
-- **FR-009**: System MUST provide text search (PostgreSQL tsvector), semantic search (pgvector), and hybrid search (Reciprocal Rank Fusion) across wiki pages via API and MCP (`query_documents` tool).
+- **FR-009**: System MUST provide text search (PostgreSQL tsvector), semantic search (pgvector), and hybrid search (Reciprocal Rank Fusion) across wiki pages via API and MCP (`query_documents` tool). Search queries MUST default to the repository's designated public branch.
 - **FR-010**: System MUST create pull requests containing generated READMEs, targeting the PR branch configured during repository registration, with configurable reviewers and auto-merge settings.
 - **FR-011**: System MUST expose exactly two MCP tools for external agents: `find_repository` (discover registered repositories by name, URL, or partial match) and `query_documents` (search documentation for a repository discovered via `find_repository`).
 - **FR-012**: System MUST support job management: status tracking, cancellation (Prefect native), retry from last successful task, and webhook callbacks on completion/failure.
@@ -202,10 +211,12 @@ External AI agents consume the autodoc system as an MCP server with two focused 
 - **FR-023**: System MUST reconcile stale RUNNING jobs against Prefect flow states on startup.
 - **FR-024**: System MUST support scope overlap auto-exclusion where parent scopes automatically exclude child scope directories with their own `.autodoc.yaml`.
 - **FR-025**: System MUST support updating and deleting repositories with cascading deletes of associated documentation, jobs, and wiki structures.
+- **FR-026**: System MUST enforce a 1-hour hard timeout on all job types (full and incremental). When a pod reaches the timeout, it MUST update the job status to FAILED (with a timeout reason) before the pod is terminated.
+- **FR-027**: System MUST enforce a configurable global concurrency limit on simultaneous running jobs (e.g., `MAX_CONCURRENT_JOBS`). Jobs exceeding the limit remain in PENDING status until a slot is available. Managed via Prefect's native concurrency limits.
 
 ### Key Entities
 
-- **Repository**: A registered Git repository (GitHub/GitLab/Bitbucket) with URL, provider, encrypted access token, configured documentation branches (which branches autodoc monitors and generates documentation for), and configured PR target branches (which branches autodoc opens pull requests against). Uniquely identified by URL.
+- **Repository**: A registered Git repository (GitHub/GitLab/Bitbucket) with URL, provider, optional access token (plaintext in v1), a 1:1 mapping of documentation branches to PR target branches (e.g., `{main: main, develop: develop}`), and a designated **public branch** — the single branch whose wiki is returned by all search queries. Multiple branches can trigger documentation generation, but only the public branch's documentation is searchable. Uniquely identified by URL.
 - **Job**: A documentation generation task tied to a repository and branch. Tracks status (PENDING, RUNNING, COMPLETED, FAILED, CANCELLED), resolved mode (full/incremental — determined automatically based on whether a previous commit SHA exists), force flag, quality report, token usage, and PR URL.
 - **WikiStructure**: A versioned documentation structure for a specific `(repository_id, branch, scope_path)`. Contains sections hierarchy and page specifications. Up to 3 versions retained per scope.
 - **WikiPage**: A single generated documentation page belonging to a WikiStructure. Contains markdown content, content embedding (pgvector), quality score, source file references, and code references. Cascade-deleted when its WikiStructure is removed.
@@ -213,12 +224,22 @@ External AI agents consume the autodoc system as an MCP server with two focused 
 - **AgentResult**: Wrapper for agent output carrying evaluation history, attempt count, final score, quality gate status, and token usage.
 - **EvaluationResult**: Critic output with weighted score, pass/fail status, per-criterion scores, and improvement feedback.
 
+## Clarifications
+
+### Session 2026-02-15
+
+- Q: What are the target time limits for full and incremental documentation generation? → A: 1-hour hard timeout for all job types. Pod updates job status to FAILED before terminating on timeout.
+- Q: What is the mapping model between documented branches and PR target branches? → A: 1:1 mapping — each documented branch has a paired PR target branch. Multiple branches can trigger generation (e.g., develop and main). Only one branch per repository is designated as the "public" branch; all documentation searches query through that branch's wiki.
+- Q: Should the system limit how many jobs can run concurrently? → A: Global concurrency limit only (e.g., max N concurrent jobs system-wide). No per-repo limit.
+- Q: What level of token protection is expected for repository access tokens? → A: No encryption in v1. Tokens stored as plaintext; repositories are trusted. Encryption deferred to a future version.
+- Q: Which capabilities are explicitly not in scope for v1? → A: All out of scope: UI dashboard, multi-language docs, PDF export, self-hosted Git (Gitea/etc), user accounts/RBAC.
+
 ## Success Criteria
 
 ### Measurable Outcomes
 
-- **SC-001**: Users can register a repository and receive generated documentation (wiki pages + README PR) from a single API call, with the entire process completing within a reasonable timeframe for repositories up to 500 files.
-- **SC-002**: Incremental documentation updates regenerate only affected pages, completing noticeably faster than full generation for small changesets (fewer than 10% of files changed).
+- **SC-001**: Users can register a repository and receive generated documentation (wiki pages + README PR) from a single API call. All jobs (full and incremental) have a 1-hour hard timeout enforced at the pod level.
+- **SC-002**: Incremental documentation updates regenerate only affected pages, completing faster than full generation for small changesets (fewer than 10% of files changed), within the same 1-hour timeout.
 - **SC-003**: Quality-gated generation produces documentation where the average quality score across all pages exceeds the configured threshold in at least 90% of jobs.
 - **SC-004**: Documentation search returns relevant results for natural language queries, with hybrid search outperforming text-only or semantic-only search in result relevance.
 - **SC-005**: Monorepo support correctly discovers and independently processes multiple documentation scopes, with no cross-scope contamination in generated content.
