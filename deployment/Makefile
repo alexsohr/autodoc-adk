@@ -1,0 +1,41 @@
+.PHONY: dev-up dev-down dev-clean migrate api worker deploy-local test lint
+
+# ── Infrastructure ──
+
+dev-up:
+	docker compose -f docker/docker-compose.dev.yml up -d
+	@echo "Waiting for PostgreSQL..."
+	@sleep 3
+	@echo "Infrastructure ready: PostgreSQL on :5432, Prefect on :4200"
+
+dev-down:
+	docker compose -f docker/docker-compose.dev.yml down
+
+dev-clean:
+	docker compose -f docker/docker-compose.dev.yml down -v
+
+# ── Database ──
+
+migrate:
+	cd .. && uv run alembic upgrade head
+
+# ── Application ──
+
+api:
+	cd .. && uv run uvicorn src.main:app --host 0.0.0.0 --port 8080 --reload
+
+worker:
+	cd .. && uv run prefect worker start --pool local-dev
+
+# ── Deployment ──
+
+deploy-local:
+	cd .. && uv run prefect deploy --all
+
+# ── Quality ──
+
+test:
+	cd .. && uv run pytest
+
+lint:
+	cd .. && uv run ruff check src/ tests/
