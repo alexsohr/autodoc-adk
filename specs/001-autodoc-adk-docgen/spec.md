@@ -9,7 +9,7 @@
 
 ### User Story 1 - Full Documentation Generation (Priority: P1)
 
-A developer registers a repository (specifying the branches to document and the target branches for PRs) and triggers documentation generation. The system determines whether this is a first-time (full) or incremental run based on whether a previous commit SHA is stored for that repository in autodoc. For a first-time run, the system clones the repository, analyzes its structure, generates comprehensive wiki-style documentation pages, distills a README, and opens a pull request with the README targeting the configured PR branch.
+A developer registers a repository (specifying the branches to document and the target branches for PRs) and triggers documentation generation. The system determines whether this is a first-time (full) or incremental run (per FR-003a). For a first-time run, the system clones the repository, analyzes its structure, generates comprehensive wiki-style documentation pages, distills a README, and opens a pull request with the README targeting the configured PR branch.
 
 **Why this priority**: This is the core value proposition — turning a codebase into structured documentation automatically. Without this, nothing else works.
 
@@ -17,27 +17,26 @@ A developer registers a repository (specifying the branches to document and the 
 
 **Acceptance Scenarios**:
 
-1. **Given** a registered public repository with no previous commit SHA stored in autodoc, **When** a user triggers `POST /jobs`, **Then** the system determines this is a full generation, creates a job (PENDING), clones the repository, extracts documentation structure, generates wiki pages with quality evaluation, distills a README, stores wiki pages in PostgreSQL, and creates a pull request containing the README targeting the configured PR branch.
+1. **Given** a registered public repository with no existing WikiStructure for the target branch, **When** a user triggers `POST /jobs`, **Then** the system determines this is a full generation, creates a job (PENDING), clones the repository, extracts documentation structure, generates wiki pages with quality evaluation, distills a README, stores wiki pages in PostgreSQL, and creates a pull request containing the README targeting the configured PR branch.
 2. **Given** a registered private repository with an access token, **When** a user triggers generation, **Then** the system authenticates the clone and PR creation using the stored access token.
 3. **Given** a job is in progress, **When** a user queries `GET /jobs/{id}`, **Then** the response includes the current status, and upon completion includes `quality_report`, `token_usage`, and `pull_request_url`.
 4. **Given** a repository with no `.autodoc.yaml`, **When** full generation is triggered, **Then** sensible defaults are applied (all files included, junior-developer audience, tutorial tone, comprehensive detail).
 5. **Given** a repository with existing documentation and no code changes since the last run, **When** a user triggers `POST /jobs` with `force: true`, **Then** the system performs a full documentation generation regardless of whether changes exist.
-6. **Given** a repository with existing documentation and no code changes since the last run, **When** a user triggers `POST /jobs` without the `force` flag, **Then** the job completes immediately with `status: no_changes` and no regeneration is performed.
 
 ---
 
 ### User Story 2 - Incremental Documentation Update (Priority: P1)
 
-A developer pushes code changes and triggers a documentation job. Because the repository already has a previous commit SHA stored in autodoc (from a prior full generation), the system automatically determines this is an incremental update. It detects changed files via the provider's compare API, regenerates only affected pages, merges with unchanged pages, and creates an updated PR targeting the configured PR branch.
+A developer pushes code changes and triggers a documentation job. Because the repository already has existing WikiStructures for that branch (per FR-003a), the system automatically determines this is an incremental update. It detects changed files via the provider's compare API, regenerates only affected pages, merges with unchanged pages, and creates an updated PR targeting the configured PR branch.
 
 **Why this priority**: Incremental updates are essential for ongoing maintenance — full regeneration is expensive and slow. This makes the system practical for continuous use.
 
-**Independent Test**: Can be tested by first running a full generation (so a commit SHA is stored), then modifying source files in the repository, and triggering a new job. The system automatically selects incremental mode. Verify that only affected pages are regenerated and the PR contains the updated README.
+**Independent Test**: Can be tested by first running a full generation (so WikiStructures are created), then modifying source files in the repository, and triggering a new job. The system automatically selects incremental mode. Verify that only affected pages are regenerated and the PR contains the updated README.
 
 **Acceptance Scenarios**:
 
-1. **Given** a repository with existing documentation and a stored `commit_sha` in autodoc, **When** `POST /jobs` is triggered, **Then** the system automatically determines this is an incremental update, diffs changed files via the provider API, clones only if changes exist, regenerates only affected pages, and creates a PR targeting the configured PR branch.
-2. **Given** no files have changed since the last documentation run, **When** a job is triggered without the `force` flag, **Then** the job completes immediately with `status: no_changes` and no clone is performed.
+1. **Given** a repository with existing documentation and existing WikiStructures for the target branch, **When** `POST /jobs` is triggered, **Then** the system automatically determines this is an incremental update, diffs changed files via the provider API, clones only if changes exist, regenerates only affected pages, and creates a PR targeting the configured PR branch.
+2. **Given** no files have changed since the last documentation run, **When** a job is triggered without the `force` flag, **Then** the job completes immediately with status COMPLETED, `no_changes: true` in the `quality_report`, and no clone is performed.
 3. **Given** structural changes are detected (new modules or deleted directories), **When** an incremental job runs, **Then** the structure is re-extracted before regenerating affected pages.
 4. **Given** no files have changed since the last documentation run, **When** a job is triggered with `force: true`, **Then** the system performs a full regeneration regardless, overriding the incremental logic.
 
@@ -104,7 +103,7 @@ A developer or external agent searches across generated wiki documentation using
 
 **Acceptance Scenarios**:
 
-1. **Given** a repository with generated wiki pages, **When** a user queries `GET /documents/{repo_id}/search?query=authentication&search_type=text`, **Then** relevant pages are returned ranked by text relevance.
+1. **Given** a repository with generated wiki pages, **When** a user queries `GET /documents/{repository_id}/search?query=authentication&search_type=text`, **Then** relevant pages are returned ranked by text relevance.
 2. **Given** generated wiki pages with embeddings, **When** a semantic search is performed, **Then** results are ranked by cosine similarity of content embeddings.
 3. **Given** a hybrid search request, **When** the search executes, **Then** results are combined using Reciprocal Rank Fusion (RRF) with k=60.
 4. **Given** a search with `scope` parameter specified, **When** the search executes, **Then** results are filtered to only that scope's pages.
@@ -122,7 +121,7 @@ A user manages documentation jobs: viewing status, cancelling running jobs, retr
 **Acceptance Scenarios**:
 
 1. **Given** a running job, **When** `POST /jobs/{id}/cancel` is called, **Then** the job is cancelled via Prefect's native cancellation and status is updated to CANCELLED.
-2. **Given** a failed job, **When** `POST /jobs/{id}/retry` is called, **Then** the flow resumes from the last successful Prefect task.
+2. **Given** a failed job, **When** `POST /jobs/{id}/retry` is called, **Then** a new Prefect flow run is triggered for the same job parameters.
 3. **Given** a job with `callback_url` configured, **When** the job completes or fails, **Then** a webhook notification is POSTed to the callback URL with job details.
 4. **Given** duplicate `POST /jobs` requests for the same `(repository_id, branch, dry_run)`, **When** an active job exists, **Then** the existing job is returned instead of creating a duplicate.
 
@@ -130,16 +129,16 @@ A user manages documentation jobs: viewing status, cancelling running jobs, retr
 
 ### User Story 8 - Webhook-Driven Documentation Updates (Priority: P3)
 
-A Git provider sends a push webhook to the system. The webhook handler determines whether to trigger a full or incremental documentation run based on whether a previous commit SHA is stored for that repository in autodoc. If a commit SHA exists, it triggers an incremental update; if no commit SHA exists (first-time documentation), it triggers a full generation.
+A Git provider sends a push webhook to the system. The webhook handler determines whether to trigger a full or incremental documentation run per FR-003a.
 
 **Why this priority**: Webhooks automate the documentation update pipeline, removing manual trigger steps. This is an enhancement over the manual API trigger.
 
-**Independent Test**: Can be tested by sending a simulated GitHub push webhook payload to `POST /webhooks/push` — first for a repository with no stored commit SHA (verify full generation), then after documentation exists (verify incremental generation).
+**Independent Test**: Can be tested by sending a simulated GitHub push webhook payload to `POST /webhooks/push` — first for a repository with no existing WikiStructures (verify full generation), then after documentation exists (verify incremental generation).
 
 **Acceptance Scenarios**:
 
-1. **Given** a registered repository with a stored commit SHA and webhook configured, **When** a GitHub push event is received at `POST /webhooks/push`, **Then** the system detects the provider from headers, extracts the repo URL and branch, determines this is an incremental update (commit SHA exists), and triggers an incremental job.
-2. **Given** a registered repository with no stored commit SHA, **When** a push webhook is received, **Then** the system determines this is a first-time generation and triggers a full documentation job.
+1. **Given** a registered repository with existing WikiStructures for the branch and webhook configured, **When** a GitHub push event is received at `POST /webhooks/push`, **Then** the system detects the provider from headers, extracts the repo URL and branch, determines this is an incremental update (WikiStructures exist), and triggers an incremental job.
+2. **Given** a registered repository with no existing WikiStructures for the pushed branch, **When** a push webhook is received, **Then** the system determines this is a first-time generation and triggers a full documentation job.
 3. **Given** the pushed branch is not in the repository's configured documentation branches, **When** the webhook is received, **Then** the event is skipped.
 4. **Given** an unregistered repository URL in the webhook payload, **When** the webhook is processed, **Then** the event is skipped (auto-registration is not performed for webhooks — repositories must be pre-registered with their branch configuration).
 5. **Given** rapid successive pushes to the same branch, **When** multiple webhooks arrive, **Then** job idempotency prevents duplicate jobs.
@@ -157,14 +156,14 @@ External AI agents consume the autodoc system as an MCP server with two focused 
 **Acceptance Scenarios**:
 
 1. **Given** an external agent, **When** it calls the `find_repository` MCP tool with a search term (name, URL, or partial match), **Then** matching registered repositories are returned with their IDs, names, providers, and documented branches.
-2. **Given** a repository ID obtained from `find_repository`, **When** an agent calls `query_documents` with the repository ID and a natural language query, **Then** relevant documentation pages are returned ranked by relevance.
+2. **Given** a repository ID obtained from `find_repository`, **When** an agent calls `query_documents` with the `repository_id` (obtained from `find_repository`) and a natural language query, **Then** relevant documentation pages are returned ranked by relevance.
 
 ---
 
 ### Edge Cases
 
 - What happens when a repository exceeds `MAX_REPO_SIZE` or `MAX_TOTAL_FILES`? The scan_file_tree task fails with a `PermanentError` and the job is marked FAILED.
-- What happens when a page generation fails but others succeed? Already-committed pages persist as partial results; the job is marked FAILED with a detailed quality report. Retry resumes from the last successful task.
+- What happens when a page generation fails but others succeed? Already-committed pages persist as partial results; the job is marked FAILED with a detailed quality report. Retry triggers a fresh flow run for the same job parameters; previously persisted pages from successful tasks remain in the database.
 - What happens when the embedding model configuration changes between runs? Existing embeddings become invalid. A full re-generation is required for all repositories.
 - What happens when multiple scopes have overlapping files? Parent scopes auto-exclude child scope directories.
 - What happens when an orphaned temp directory exists from a crashed worker? A scheduled cleanup task removes `autodoc_*` temp dirs older than 1 hour.
@@ -188,8 +187,8 @@ External AI agents consume the autodoc system as an MCP server with two focused 
 - **FR-001**: System MUST allow users to register repositories (GitHub, Bitbucket) with optional access tokens (stored as plaintext in v1) via a REST API. During registration, users MUST specify a 1:1 mapping of documentation branches to PR target branches and designate exactly one branch as the **public branch** whose wiki is used for all search queries.
 - **FR-002**: System MUST support full documentation generation — clone, scan/prune file tree, extract structure, generate pages with quality evaluation, distill README, create PR targeting the configured PR branch.
 - **FR-003**: System MUST support incremental documentation updates — detect changes via provider compare API, regenerate only affected pages, merge with unchanged pages, create PR targeting the configured PR branch.
-- **FR-003a**: System MUST automatically determine whether a job is full or incremental based on whether a previous commit SHA is stored for the repository in autodoc. If no commit SHA exists, the system performs full generation; if a commit SHA exists, it performs incremental update.
-- **FR-003b**: System MUST support a `force` flag on the `POST /jobs` API that triggers full documentation generation regardless of whether changes exist or a previous commit SHA is stored.
+- **FR-003a**: System MUST automatically determine whether a job is full or incremental based on whether any WikiStructure exists for the `(repository_id, branch)` in the database. If no WikiStructure exists, the system performs full generation; if a WikiStructure exists, it performs incremental update.
+- **FR-003b**: System MUST support a `force` flag on the `POST /jobs` API that triggers full documentation generation regardless of whether changes exist or WikiStructures are present.
 - **FR-004**: System MUST implement a Generator & Critic loop pattern where each generating agent (StructureExtractor, PageGenerator, ReadmeDistiller) pairs a Generator sub-agent with a separate Critic sub-agent for independent quality evaluation against weighted rubrics. Default quality threshold is 7.0/10 with up to 3 attempts per generation.
 - **FR-005**: System MUST support configurable Critic models separate from Generator models to avoid self-reinforcing evaluation bias.
 - **FR-006**: System MUST produce two output formats: a structured wiki (sections + pages in PostgreSQL) and a distilled README pushed via pull request.
@@ -197,10 +196,10 @@ External AI agents consume the autodoc system as an MCP server with two focused 
 - **FR-008**: System MUST support monorepo documentation via auto-discovery of multiple `.autodoc.yaml` files, processing each scope in parallel with independent wiki structures and READMEs.
 - **FR-009**: System MUST provide text search (PostgreSQL tsvector), semantic search (pgvector), and hybrid search (Reciprocal Rank Fusion) across wiki pages via API and MCP (`query_documents` tool). Search queries MUST default to the repository's designated public branch.
 - **FR-010**: System MUST create pull requests containing generated READMEs, targeting the PR branch configured during repository registration, with configurable reviewers and auto-merge settings.
-- **FR-011**: System MUST expose exactly two MCP tools for external agents: `find_repository` (discover registered repositories by name, URL, or partial match) and `query_documents` (search documentation for a repository discovered via `find_repository`).
-- **FR-012**: System MUST support job management: status tracking, cancellation (Prefect native), retry from last successful task (FAILED jobs only — COMPLETED and CANCELLED are terminal), and webhook callbacks on completion/failure.
+- **FR-011**: System MUST expose exactly two MCP tools for external agents: `find_repository` (discover registered repositories by name, URL, or partial match) and `query_documents` (search documentation by `repository_id` obtained from `find_repository`).
+- **FR-012**: System MUST support job management: status tracking, cancellation (Prefect native), retry via new flow run (FAILED jobs only — COMPLETED and CANCELLED are terminal), and webhook callbacks on completion/failure.
 - **FR-013**: System MUST enforce job idempotency — duplicate requests for the same `(repository_id, branch, dry_run)` return the existing active job.
-- **FR-014**: System MUST receive Git provider push/merge webhooks and automatically determine whether to trigger full or incremental documentation generation based on whether a previous commit SHA is stored for the repository. Webhooks MUST only trigger jobs for branches in the repository's configured documentation branches.
+- **FR-014**: System MUST receive Git provider push/merge webhooks and automatically determine whether to trigger full or incremental documentation generation based on whether any WikiStructure exists for that repository and branch in the database. Webhooks MUST only trigger jobs for branches in the repository's configured documentation branches.
 - **FR-015**: System MUST persist ADK agent sessions to PostgreSQL via DatabaseSessionService, enabling Critic feedback to be fed back to the Generator through conversation history across retry attempts.
 - **FR-016**: System MUST archive ADK sessions to S3 after each flow run and delete them from PostgreSQL.
 - **FR-017**: System MUST track the best attempt (highest score) across retries, with configurable overall minimum score floor (default 5.0/10) and per-criterion minimum scores.
@@ -218,9 +217,9 @@ External AI agents consume the autodoc system as an MCP server with two focused 
 ### Key Entities
 
 - **Repository**: A registered Git repository (GitHub/Bitbucket) with URL, provider, optional access token (plaintext in v1), a 1:1 mapping of documentation branches to PR target branches (e.g., `{main: main, develop: develop}`), and a designated **public branch** — the single branch whose wiki is returned by all search queries. Multiple branches can trigger documentation generation, but only the public branch's documentation is searchable. Uniquely identified by URL.
-- **Job**: A documentation generation task tied to a repository and branch. Tracks status (PENDING, RUNNING, COMPLETED, FAILED, CANCELLED), resolved mode (full/incremental — determined automatically based on whether a previous commit SHA exists), force flag, quality report, token usage, and PR URL. Valid state transitions: PENDING→RUNNING→COMPLETED|FAILED|CANCELLED. Only FAILED jobs may be retried (transitions back to PENDING). COMPLETED and CANCELLED are terminal states with no re-entry.
+- **Job**: A documentation generation task tied to a repository and branch. Tracks status (PENDING, RUNNING, COMPLETED, FAILED, CANCELLED), resolved mode (full/incremental — determined automatically per FR-003a), force flag, quality report, token usage, and PR URL. Valid state transitions: PENDING→RUNNING→COMPLETED|FAILED|CANCELLED, PENDING→CANCELLED. Only FAILED jobs may be retried (transitions back to PENDING). COMPLETED and CANCELLED are terminal states with no re-entry.
 - **WikiStructure**: A versioned documentation structure for a specific `(repository_id, branch, scope_path)`. Contains sections hierarchy and page specifications. Up to 3 versions retained per scope.
-- **WikiPage**: A single generated documentation page belonging to a WikiStructure. Contains markdown content, content embedding (pgvector vector(3072) of the full markdown body, generated at page creation/update time), quality score, source file references, and code references. Cascade-deleted when its WikiStructure is removed.
+- **WikiPage**: A single generated documentation page belonging to a WikiStructure. Contains markdown content, quality score, source file references, and code references. Content embeddings are stored at the chunk level (PageChunk) rather than per page. Cascade-deleted when its WikiStructure is removed.
 - **AutodocConfig**: Per-scope configuration from `.autodoc.yaml` defining include/exclude patterns, style preferences, custom instructions, README settings, and PR preferences.
 - **AgentResult**: Wrapper for agent output carrying evaluation history, attempt count, final score, quality gate status, and token usage.
 - **EvaluationResult**: Critic output with weighted score, pass/fail status, per-criterion scores, and improvement feedback.
@@ -237,7 +236,7 @@ External AI agents consume the autodoc system as an MCP server with two focused 
 - Q: Should spec be aligned with constitution to remove GitLab support? → A: Yes, remove GitLab. Spec aligned to constitution — GitHub + Bitbucket only.
 - Q: Should FR-016 (S3 session archival) be removed per constitution's no-S3 ephemeral workspace constraint? → A: No. Keep S3 for archiving ADK agent session data. Constitution to be amended to permit S3 for session archival only.
 - Q: What are the valid job state transitions? → A: Strict linear: PENDING→RUNNING→COMPLETED/FAILED/CANCELLED. Only FAILED jobs can be retried (→PENDING). No other backward transitions.
-- Q: What content is embedded for semantic search? → A: Full page content — embed the entire markdown body of each WikiPage. Embeddings generated at page creation/update time.
+- Q: What content is embedded for semantic search? → A: Page content is chunked (heading-aware split → recursive fallback, 512 tokens, 50 token overlap) and each chunk is independently embedded at the `page_chunks` level. Embeddings are generated after page creation using the configured embedding model (default: text-embedding-3-large, 3072 dimensions).
 - Q: What concrete values should the repository size limits have? → A: MAX_REPO_SIZE=500MB, MAX_TOTAL_FILES=5,000, MAX_FILE_SIZE=1MB.
 - Q: What are the default quality score threshold and minimum score floor for the Generator & Critic loop? → A: Default quality threshold=7.0/10, minimum score floor=5.0/10, max_attempts=3.
 - Q: What is the default global concurrency limit for simultaneous running jobs? → A: MAX_CONCURRENT_JOBS=50.
@@ -254,7 +253,7 @@ External AI agents consume the autodoc system as an MCP server with two focused 
 - **SC-001**: Users can register a repository and receive generated documentation (wiki pages + README PR) from a single API call. All jobs (full and incremental) have a 1-hour hard timeout enforced at the pod level.
 - **SC-002**: Incremental documentation updates regenerate only affected pages, completing faster than full generation for small changesets (fewer than 10% of files changed), within the same 1-hour timeout.
 - **SC-003**: Quality-gated generation produces documentation where the average quality score across all pages exceeds the configured threshold in at least 90% of jobs.
-- **SC-004**: Documentation search returns relevant results for natural language queries within 3 seconds (p95), with hybrid search outperforming text-only or semantic-only search in result relevance.
+- **SC-004**: Documentation search returns relevant results for natural language queries within 3 seconds (p95), with hybrid search outperforming text-only or semantic-only search in result relevance. Relevance is validated by confirming that for a set of reference queries with known expected top-3 pages, hybrid search returns the expected pages in the top-3 results more consistently than either search mode alone.
 - **SC-005**: Monorepo support correctly discovers and independently processes multiple documentation scopes, with no cross-scope contamination in generated content.
 - **SC-006**: The system handles repositories across both supported providers (GitHub, Bitbucket) for cloning, diff detection, and PR creation.
 - **SC-007**: Job management operations (cancel, retry, status check) complete within 2 seconds of the API call.
@@ -275,3 +274,4 @@ External AI agents consume the autodoc system as an MCP server with two focused 
 - API authentication is handled at the infrastructure layer (reverse proxy/API gateway) and is not part of the application.
 - Rate limiting is handled at the infrastructure layer (NGINX/cloud load balancer).
 - Webhook signature verification (HMAC) is deferred to implementation based on deployment context.
+- Node.js 18+ is available as a runtime prerequisite for the filesystem MCP server (`@modelcontextprotocol/server-filesystem`) used by ADK agents to access cloned repository files.

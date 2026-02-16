@@ -1,0 +1,1561 @@
+openapi: 3.1.0
+info:
+  title: AutoDoc ADK Documentation Generator API
+  description: |
+    REST API for the AutoDoc ADK documentation generator. Analyzes codebases and generates
+    comprehensive wiki-style documentation and distilled READMEs via pull requests.
+
+    **Key concepts:**
+    - **Repository**: A registered Git repository (GitHub/Bitbucket) with branch mappings and a designated public branch.
+    - **Job**: A documentation generation task. The system auto-determines full vs incremental mode based on stored commit SHA.
+    - **Wiki**: Structured documentation (sections + pages) stored per repository, branch, and scope.
+    - **Scope**: A documentation boundary defined by `.autodoc.yaml` files; supports monorepos.
+
+    **Authentication:** Handled at the infrastructure layer (reverse proxy/API gateway). Not part of this application.
+
+    **Rate limiting:** Handled at the infrastructure layer (NGINX/cloud load balancer).
+  version: 1.0.0
+  contact:
+    name: AutoDoc ADK
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+tags:
+  - name: repositories
+    description: Repository registration and management
+  - name: jobs
+    description: Documentation generation job management
+  - name: documents
+    description: Wiki documentation retrieval and search
+  - name: webhooks
+    description: Git provider webhook receiver
+  - name: health
+    description: System health check
+
+paths:
+  # ──────────────────────────────────────────────
+  # Repositories
+  # ──────────────────────────────────────────────
+
+  /repositories:
+    post:
+      operationId: registerRepository
+      summary: Register a repository
+      description: |
+        Register a Git repository for documentation generation. The URL must be unique.
+        Branch mappings define a 1:1 mapping of documentation branches to PR target branches.
+        The public_branch designates which branch's wiki is used for all search queries and
+        must be a key in branch_mappings.
+      tags:
+        - repositories
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRepositoryRequest'
+      responses:
+        '201':
+          description: Repository registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepositoryResponse'
+        '409':
+          description: Repository with this URL already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error (e.g., public_branch not in branch_mappings)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      operationId: listRepositories
+      summary: List repositories
+      description: List registered repositories with cursor-based pagination.
+      tags:
+        - repositories
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Paginated list of repositories
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedRepositoryResponse'
+
+  /repositories/{repository_id}:
+    parameters:
+      - $ref: '#/components/parameters/RepositoryIdPath'
+
+    get:
+      operationId: getRepository
+      summary: Get repository details
+      tags:
+        - repositories
+      responses:
+        '200':
+          description: Repository details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepositoryResponse'
+        '404':
+          description: Repository not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    patch:
+      operationId: updateRepository
+      summary: Update repository
+      description: |
+        Update repository settings. Only provided fields are updated.
+        If public_branch is updated, it must be a key in the current (or newly provided) branch_mappings.
+      tags:
+        - repositories
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRepositoryRequest'
+      responses:
+        '200':
+          description: Repository updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepositoryResponse'
+        '404':
+          description: Repository not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      operationId: deleteRepository
+      summary: Delete repository
+      description: |
+        Delete a repository and cascade-delete all associated wiki structures,
+        wiki pages, embeddings, and jobs.
+      tags:
+        - repositories
+      responses:
+        '204':
+          description: Repository deleted successfully
+        '404':
+          description: Repository not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ──────────────────────────────────────────────
+  # Jobs
+  # ──────────────────────────────────────────────
+
+  /jobs:
+    post:
+      operationId: createJob
+      summary: Trigger documentation generation
+      description: |
+        Trigger a documentation generation job. The system auto-determines whether to run
+        a full or incremental generation based on whether any WikiStructure exists for the repository and branch
+        in the database.
+
+        **Idempotency:** If a PENDING or RUNNING job already exists for the same
+        `(repository_id, branch, dry_run)`, the existing job is returned with status 200
+        instead of creating a duplicate.
+
+        **Force flag:** Setting `force: true` overrides auto-detection and triggers a full
+        generation regardless of existing WikiStructures.
+
+        Returns 201 for a newly created job, 200 for an existing active job.
+      tags:
+        - jobs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateJobRequest'
+      responses:
+        '201':
+          description: New job created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobResponse'
+        '200':
+          description: Existing active job returned (idempotency)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobResponse'
+        '404':
+          description: Repository not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      operationId: listJobs
+      summary: List jobs
+      description: |
+        List documentation generation jobs with optional filtering and cursor-based pagination.
+        This endpoint is a lightweight API proxy for programmatic consumers.
+        The Prefect UI provides richer ops-level monitoring of flow runs.
+      tags:
+        - jobs
+      parameters:
+        - name: repository_id
+          in: query
+          description: Filter by repository ID
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          description: Filter by job status
+          required: false
+          schema:
+            $ref: '#/components/schemas/JobStatus'
+        - name: branch
+          in: query
+          description: Filter by branch
+          required: false
+          schema:
+            type: string
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Paginated list of jobs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedJobResponse'
+
+  /jobs/{job_id}:
+    parameters:
+      - $ref: '#/components/parameters/JobIdPath'
+
+    get:
+      operationId: getJob
+      summary: Get job status
+      description: |
+        Get the current status and details of a documentation generation job.
+        Completed jobs include quality_report, token_usage, and pull_request_url.
+      tags:
+        - jobs
+      responses:
+        '200':
+          description: Job details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobResponse'
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /jobs/{job_id}/structure:
+    parameters:
+      - $ref: '#/components/parameters/JobIdPath'
+
+    get:
+      operationId: getJobStructure
+      summary: Get extracted wiki structure
+      description: |
+        Get the wiki structure extracted during a documentation generation job.
+        Available after the structure extraction task completes.
+      tags:
+        - jobs
+      responses:
+        '200':
+          description: Wiki structure for the job
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WikiStructureResponse'
+        '404':
+          description: Job or structure not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /jobs/{job_id}/tasks:
+    parameters:
+      - $ref: '#/components/parameters/JobIdPath'
+
+    get:
+      operationId: getJobTasks
+      summary: Get Prefect task states
+      description: |
+        Get the Prefect task states for a documentation generation job,
+        useful for tracking progress of individual tasks within the flow.
+      tags:
+        - jobs
+      responses:
+        '200':
+          description: List of task states
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaskState'
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /jobs/{job_id}/logs:
+    parameters:
+      - $ref: '#/components/parameters/JobIdPath'
+
+    get:
+      operationId: getJobLogs
+      summary: Get Prefect flow logs
+      description: Get the Prefect flow run logs for a documentation generation job.
+      tags:
+        - jobs
+      responses:
+        '200':
+          description: List of log entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LogEntry'
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /jobs/{job_id}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/JobIdPath'
+
+    post:
+      operationId: cancelJob
+      summary: Cancel a job
+      description: |
+        Cancel a PENDING or RUNNING job via Prefect's native cancellation.
+        Only jobs in PENDING or RUNNING status can be cancelled.
+      tags:
+        - jobs
+      responses:
+        '200':
+          description: Job cancelled successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobResponse'
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Job is not in a cancellable state (not PENDING or RUNNING)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /jobs/{job_id}/retry:
+    parameters:
+      - $ref: '#/components/parameters/JobIdPath'
+
+    post:
+      operationId: retryJob
+      summary: Retry a failed job
+      description: |
+        Retry a FAILED job. A new Prefect flow run is triggered for the same job parameters.
+        Only FAILED jobs can be retried. COMPLETED and CANCELLED are terminal states.
+      tags:
+        - jobs
+      responses:
+        '200':
+          description: Job retry initiated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobResponse'
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Job is not in FAILED status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ──────────────────────────────────────────────
+  # Documents
+  # ──────────────────────────────────────────────
+
+  /documents/{repository_id}:
+    parameters:
+      - $ref: '#/components/parameters/RepositoryIdPath'
+
+    get:
+      operationId: getWiki
+      summary: Get structured wiki
+      description: |
+        Get the structured wiki documentation for a repository. Returns sections
+        hierarchy with pages. Defaults to the repository's public branch and root scope.
+      tags:
+        - documents
+      parameters:
+        - $ref: '#/components/parameters/BranchQuery'
+        - $ref: '#/components/parameters/ScopeQuery'
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Paginated wiki structure with sections and pages
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedWikiResponse'
+        '404':
+          description: Repository or wiki not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /documents/{repository_id}/pages/{page_key}:
+    parameters:
+      - $ref: '#/components/parameters/RepositoryIdPath'
+      - name: page_key
+        in: path
+        required: true
+        description: URL-friendly page identifier
+        schema:
+          type: string
+
+    get:
+      operationId: getWikiPage
+      summary: Get a single wiki page
+      description: Get the full content and metadata of a single wiki page.
+      tags:
+        - documents
+      parameters:
+        - $ref: '#/components/parameters/BranchQuery'
+        - $ref: '#/components/parameters/ScopeQuery'
+      responses:
+        '200':
+          description: Wiki page content and metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WikiPageResponse'
+        '404':
+          description: Repository or page not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /documents/{repository_id}/search:
+    parameters:
+      - $ref: '#/components/parameters/RepositoryIdPath'
+
+    get:
+      operationId: searchWiki
+      summary: Search wiki pages
+      description: |
+        Search across generated wiki documentation using text, semantic, or hybrid search.
+        Hybrid search uses Reciprocal Rank Fusion (RRF) with k=60.
+        Search queries default to the repository's designated public branch.
+        Omitting the scope parameter searches across all scopes for the given branch.
+        Search results must return within 3 seconds (p95).
+
+        **Chunk-based semantic search:** Semantic and hybrid searches operate on page chunks
+        rather than full pages. Each page is split into chunks by heading, and embeddings are
+        stored per chunk. The search uses best-chunk-wins aggregation: each page is scored by
+        its single highest-scoring chunk. The response includes `best_chunk_content` and
+        `best_chunk_heading_path` for the winning chunk in semantic and hybrid results.
+      tags:
+        - documents
+      parameters:
+        - name: query
+          in: query
+          required: true
+          description: Search query string
+          schema:
+            type: string
+            minLength: 1
+        - name: search_type
+          in: query
+          required: false
+          description: Type of search to perform
+          schema:
+            type: string
+            enum:
+              - text
+              - semantic
+              - hybrid
+            default: hybrid
+        - name: branch
+          in: query
+          required: false
+          description: Branch to search (defaults to the repository's public_branch)
+          schema:
+            type: string
+        - name: scope
+          in: query
+          required: false
+          description: |
+            Scope path to filter results. Omit to search across all scopes for the given branch.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of results to return
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        '404':
+          description: Repository not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /documents/{repository_id}/scopes:
+    parameters:
+      - $ref: '#/components/parameters/RepositoryIdPath'
+
+    get:
+      operationId: listScopes
+      summary: List documentation scopes
+      description: |
+        List all documentation scopes discovered for a repository on the given branch.
+        Each scope corresponds to a `.autodoc.yaml` file found in the repository.
+      tags:
+        - documents
+      parameters:
+        - $ref: '#/components/parameters/BranchQuery'
+      responses:
+        '200':
+          description: List of documentation scopes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScopesResponse'
+        '404':
+          description: Repository not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ──────────────────────────────────────────────
+  # Webhooks
+  # ──────────────────────────────────────────────
+
+  /webhooks/push:
+    post:
+      operationId: receiveWebhook
+      summary: Git provider webhook receiver
+      description: |
+        Receive push/merge webhooks from Git providers (GitHub, Bitbucket).
+        The provider is detected from request headers (X-GitHub-Event for GitHub, X-Event-Key for Bitbucket).
+        The system normalizes provider-specific payloads to extract repository URL, branch,
+        and commit SHA.
+
+        **Skip conditions (returns 204):**
+        - The pushed branch is not in the repository's configured documentation branches
+        - The repository URL is not registered (no auto-registration for webhooks)
+
+        **Job creation:** If the repository is registered and the branch is configured,
+        a documentation job is triggered. Job idempotency prevents duplicate jobs from
+        rapid successive pushes.
+      tags:
+        - webhooks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              description: |
+                Provider-specific webhook payload. The structure depends on the Git provider
+                (GitHub push event, Bitbucket push event). Provider is detected from headers.
+              type: object
+      responses:
+        '202':
+          description: Webhook accepted, job triggered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookAcceptedResponse'
+        '204':
+          description: Webhook skipped (branch not configured or repository not registered)
+        '400':
+          description: Invalid webhook payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ──────────────────────────────────────────────
+  # Health
+  # ──────────────────────────────────────────────
+
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Health check
+      description: |
+        Check the health of the system and its dependencies.
+        Returns overall status and per-dependency status.
+      tags:
+        - health
+      responses:
+        '200':
+          description: System health status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+components:
+  # ──────────────────────────────────────────────
+  # Parameters
+  # ──────────────────────────────────────────────
+
+  parameters:
+    RepositoryIdPath:
+      name: repository_id
+      in: path
+      required: true
+      description: Repository UUID
+      schema:
+        type: string
+        format: uuid
+
+    JobIdPath:
+      name: job_id
+      in: path
+      required: true
+      description: Job UUID
+      schema:
+        type: string
+        format: uuid
+
+    CursorParam:
+      name: cursor
+      in: query
+      required: false
+      description: Pagination cursor from a previous response's next_cursor
+      schema:
+        type: string
+
+    LimitParam:
+      name: limit
+      in: query
+      required: false
+      description: Maximum number of items to return
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+    BranchQuery:
+      name: branch
+      in: query
+      required: false
+      description: Branch name (defaults to the repository's public_branch)
+      schema:
+        type: string
+
+    ScopeQuery:
+      name: scope
+      in: query
+      required: false
+      description: Documentation scope path. Omit to include all scopes.
+      schema:
+        type: string
+
+  # ──────────────────────────────────────────────
+  # Schemas
+  # ──────────────────────────────────────────────
+
+  schemas:
+
+    # ── Repository Schemas ──
+
+    RegisterRepositoryRequest:
+      type: object
+      required:
+        - url
+        - provider
+        - branch_mappings
+        - public_branch
+      properties:
+        url:
+          type: string
+          format: uri
+          description: Git repository URL
+          examples:
+            - "https://github.com/org/repo"
+        provider:
+          $ref: '#/components/schemas/GitProvider'
+        branch_mappings:
+          type: object
+          description: |
+            1:1 mapping of documentation branches to PR target branches.
+            Keys are the branches to generate documentation for; values are the
+            branches that PRs will target.
+          additionalProperties:
+            type: string
+          examples:
+            - main: main
+              develop: develop
+        public_branch:
+          type: string
+          description: |
+            The designated public branch whose wiki is used for all search queries.
+            Must be a key in branch_mappings.
+          examples:
+            - "main"
+        access_token:
+          type: string
+          writeOnly: true
+          description: |
+            Repository access token for private repositories. Write-only; never
+            returned in responses. Stored as plaintext in v1.
+
+    UpdateRepositoryRequest:
+      type: object
+      properties:
+        branch_mappings:
+          type: object
+          description: Updated branch mappings
+          additionalProperties:
+            type: string
+        public_branch:
+          type: string
+          description: |
+            Updated public branch. Must be a key in the current or newly
+            provided branch_mappings.
+        access_token:
+          type: string
+          writeOnly: true
+          description: Updated access token (write-only)
+
+    RepositoryResponse:
+      type: object
+      required:
+        - id
+        - url
+        - provider
+        - org
+        - name
+        - branch_mappings
+        - public_branch
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        url:
+          type: string
+          format: uri
+        provider:
+          $ref: '#/components/schemas/GitProvider'
+        org:
+          type: string
+          description: Organization or workspace extracted from the repository URL
+        name:
+          type: string
+          description: Repository name extracted from the URL
+        branch_mappings:
+          type: object
+          description: Mapping of documentation branches to PR target branches
+          additionalProperties:
+            type: string
+        public_branch:
+          type: string
+          description: The designated public branch for search queries
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PaginatedRepositoryResponse:
+      type: object
+      required:
+        - items
+        - next_cursor
+        - limit
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RepositoryResponse'
+        next_cursor:
+          type: string
+          nullable: true
+          description: Cursor for the next page. Null if no more results.
+        limit:
+          type: integer
+
+    GitProvider:
+      type: string
+      enum:
+        - github
+        - bitbucket
+      description: Supported Git providers (GitHub and Bitbucket in v1)
+
+    # ── Job Schemas ──
+
+    CreateJobRequest:
+      type: object
+      required:
+        - repository_id
+      properties:
+        repository_id:
+          type: string
+          format: uuid
+          description: ID of the registered repository
+        branch:
+          type: string
+          description: |
+            Branch to generate documentation for. Defaults to the repository's
+            public_branch. Must be a key in the repository's branch_mappings.
+        force:
+          type: boolean
+          default: false
+          description: |
+            Force full documentation generation regardless of existing WikiStructures.
+            When false, the system auto-determines full vs incremental mode.
+        dry_run:
+          type: boolean
+          default: false
+          description: |
+            When true, only extract structure without generating content.
+            Useful for previewing what would be documented.
+        callback_url:
+          type: string
+          format: uri
+          description: |
+            Webhook URL for job completion/failure notification. The system
+            POSTs a WebhookPayload to this URL on job completion or failure
+            with retry (3 retries, exponential backoff: 2s, 4s, 8s).
+
+    JobResponse:
+      type: object
+      required:
+        - id
+        - repository_id
+        - status
+        - mode
+        - branch
+        - force
+        - dry_run
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        repository_id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        mode:
+          $ref: '#/components/schemas/JobMode'
+        branch:
+          type: string
+          description: Branch being documented
+        commit_sha:
+          type: string
+          nullable: true
+          description: Git commit SHA that was documented (populated after clone)
+        force:
+          type: boolean
+          description: Whether full generation was forced
+        dry_run:
+          type: boolean
+          description: Whether this is a dry-run (structure only)
+        quality_report:
+          $ref: '#/components/schemas/QualityReport'
+        token_usage:
+          $ref: '#/components/schemas/TokenUsage'
+        config_warnings:
+          type: array
+          nullable: true
+          items:
+            type: object
+            required:
+              - scope_path
+              - message
+            properties:
+              scope_path:
+                type: string
+                description: Scope where the warning occurred
+              message:
+                type: string
+                description: Human-readable warning message
+              key:
+                type: string
+                description: The unknown or problematic YAML key
+          description: Validation warnings from .autodoc.yaml parsing
+        pull_request_url:
+          type: string
+          format: uri
+          nullable: true
+          description: URL of the created pull request (set on completion)
+        error_message:
+          type: string
+          nullable: true
+          description: Error message if the job failed
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    JobStatus:
+      type: string
+      enum:
+        - PENDING
+        - RUNNING
+        - COMPLETED
+        - FAILED
+        - CANCELLED
+      description: |
+        Job status. State transitions: PENDING -> RUNNING -> COMPLETED | FAILED | CANCELLED.
+        Only FAILED jobs can be retried (transitions back to PENDING).
+        COMPLETED and CANCELLED are terminal states.
+
+    JobMode:
+      type: string
+      enum:
+        - full
+        - incremental
+      description: |
+        Documentation generation mode. Auto-determined by the system based on
+        whether any WikiStructure exists for the repository and branch. The force flag overrides to full.
+
+    QualityReport:
+      type: object
+      nullable: true
+      description: |
+        Quality metrics aggregated from all AgentResult instances.
+        Available after job completion.
+      required:
+        - overall_score
+        - quality_threshold
+        - passed
+        - total_pages
+      properties:
+        overall_score:
+          type: number
+          format: float
+          description: Weighted average score across all pages
+        quality_threshold:
+          type: number
+          format: float
+          description: The configured threshold (default 7.0)
+        passed:
+          type: boolean
+          description: Whether the overall score met the threshold
+        total_pages:
+          type: integer
+          description: Total number of pages generated
+        pages_below_floor:
+          type: integer
+          description: Number of pages below the minimum score floor
+        page_scores:
+          type: array
+          items:
+            type: object
+            required:
+              - page_key
+              - score
+              - passed
+              - attempts
+            properties:
+              page_key:
+                type: string
+              score:
+                type: number
+                format: float
+              passed:
+                type: boolean
+              attempts:
+                type: integer
+              below_minimum_floor:
+                type: boolean
+              criteria_scores:
+                type: object
+                additionalProperties:
+                  type: number
+                  format: float
+        readme_score:
+          type: object
+          nullable: true
+          description: README distillation quality score (null for dry_run)
+          properties:
+            score:
+              type: number
+              format: float
+            passed:
+              type: boolean
+            attempts:
+              type: integer
+            criteria_scores:
+              type: object
+              additionalProperties:
+                type: number
+                format: float
+        structure_score:
+          type: object
+          nullable: true
+          description: Structure extraction quality score
+          properties:
+            score:
+              type: number
+              format: float
+            passed:
+              type: boolean
+            attempts:
+              type: integer
+            criteria_scores:
+              type: object
+              additionalProperties:
+                type: number
+                format: float
+        regenerated_pages:
+          type: array
+          items:
+            type: string
+          description: Page keys that were regenerated (incremental mode)
+        no_changes:
+          type: boolean
+          description: True when no file changes were detected (incremental mode)
+
+    TokenUsage:
+      type: object
+      nullable: true
+      description: |
+        Token usage metrics aggregated from all AgentResult instances.
+        Available after job completion.
+      required:
+        - total_input_tokens
+        - total_output_tokens
+        - total_tokens
+      properties:
+        total_input_tokens:
+          type: integer
+          description: Total input tokens across all agents and attempts
+        total_output_tokens:
+          type: integer
+          description: Total output tokens across all agents and attempts
+        total_tokens:
+          type: integer
+          description: Sum of input + output tokens
+        by_agent:
+          type: object
+          description: Token usage breakdown per agent type
+          properties:
+            structure_extractor:
+              $ref: '#/components/schemas/AgentTokenUsage'
+            page_generator:
+              $ref: '#/components/schemas/AgentTokenUsage'
+            readme_distiller:
+              $ref: '#/components/schemas/AgentTokenUsage'
+            embedding:
+              $ref: '#/components/schemas/AgentTokenUsage'
+
+    AgentTokenUsage:
+      type: object
+      properties:
+        input_tokens:
+          type: integer
+        output_tokens:
+          type: integer
+        total_tokens:
+          type: integer
+        calls:
+          type: integer
+          description: Number of LLM calls (generator + critic)
+
+    PaginatedJobResponse:
+      type: object
+      required:
+        - items
+        - next_cursor
+        - limit
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/JobResponse'
+        next_cursor:
+          type: string
+          nullable: true
+          description: Cursor for the next page. Null if no more results.
+        limit:
+          type: integer
+
+    TaskState:
+      type: object
+      description: Prefect task state for a job's flow run
+      properties:
+        task_name:
+          type: string
+          description: Name of the Prefect task
+        state:
+          type: string
+          description: Current task state (e.g., Completed, Running, Failed, Pending)
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        message:
+          type: string
+          nullable: true
+          description: Optional state message or error details
+
+    LogEntry:
+      type: object
+      description: Prefect flow log entry
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        level:
+          type: string
+          description: Log level (INFO, WARNING, ERROR, etc.)
+        message:
+          type: string
+          description: Log message content
+        task_name:
+          type: string
+          nullable: true
+          description: Associated task name, if applicable
+
+    # ── Document Schemas ──
+
+    WikiStructureResponse:
+      type: object
+      description: Extracted wiki structure for a documentation scope
+      properties:
+        id:
+          type: string
+          format: uuid
+        repository_id:
+          type: string
+          format: uuid
+        branch:
+          type: string
+        scope_path:
+          type: string
+          description: Documentation scope path (e.g., "." for root, "packages/auth" for a sub-project)
+        version:
+          type: integer
+          description: Structure version (1-based, max 3 retained per scope)
+        title:
+          type: string
+        description:
+          type: string
+        sections:
+          type: array
+          items:
+            $ref: '#/components/schemas/WikiSection'
+          description: Hierarchical section structure
+        commit_sha:
+          type: string
+          description: Git commit SHA this structure was generated from
+        created_at:
+          type: string
+          format: date-time
+
+    WikiSection:
+      type: object
+      description: A section within the wiki structure containing page references
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        pages:
+          type: array
+          items:
+            $ref: '#/components/schemas/WikiPageSummary'
+        subsections:
+          type: array
+          items:
+            $ref: '#/components/schemas/WikiSection'
+
+    WikiPageSummary:
+      type: object
+      description: Summary of a wiki page within a section
+      properties:
+        page_key:
+          type: string
+          description: URL-friendly page identifier
+        title:
+          type: string
+        description:
+          type: string
+        importance:
+          $ref: '#/components/schemas/PageImportance'
+        page_type:
+          $ref: '#/components/schemas/PageType'
+
+    WikiPageResponse:
+      type: object
+      description: Full wiki page content and metadata
+      required:
+        - page_key
+        - title
+        - content
+      properties:
+        page_key:
+          type: string
+          description: URL-friendly page identifier
+        title:
+          type: string
+        description:
+          type: string
+        importance:
+          $ref: '#/components/schemas/PageImportance'
+        page_type:
+          $ref: '#/components/schemas/PageType'
+        content:
+          type: string
+          description: Full markdown content of the page
+        source_files:
+          type: array
+          items:
+            type: string
+          description: Relative file paths this page documents
+        related_pages:
+          type: array
+          items:
+            type: string
+          description: Page keys of related pages
+        quality_score:
+          type: number
+          format: float
+          description: Quality score from the Critic evaluation
+
+    PageImportance:
+      type: string
+      enum:
+        - high
+        - medium
+        - low
+
+    PageType:
+      type: string
+      enum:
+        - api
+        - module
+        - class
+        - overview
+
+    PaginatedWikiResponse:
+      type: object
+      required:
+        - items
+        - next_cursor
+        - limit
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/WikiSection'
+          description: Sections with their pages
+        next_cursor:
+          type: string
+          nullable: true
+          description: Cursor for the next page. Null if no more results.
+        limit:
+          type: integer
+
+    SearchResponse:
+      type: object
+      required:
+        - results
+        - total
+        - search_type
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchResult'
+        total:
+          type: integer
+          description: Total number of matching results
+        search_type:
+          type: string
+          enum:
+            - text
+            - semantic
+            - hybrid
+          description: The search type that was used
+
+    SearchResult:
+      type: object
+      required:
+        - page_key
+        - title
+        - snippet
+        - score
+      properties:
+        page_key:
+          type: string
+          description: URL-friendly page identifier
+        title:
+          type: string
+          description: Page title
+        snippet:
+          type: string
+          description: Relevant excerpt from the page content
+        score:
+          type: number
+          format: float
+          description: |
+            Relevance score. For hybrid search this is the RRF score;
+            for text search it is the tsvector rank; for semantic search
+            it is the cosine similarity.
+        best_chunk_content:
+          type: string
+          nullable: true
+          description: |
+            The most relevant chunk text from the matching page. Present only
+            for hybrid and semantic search types.
+        best_chunk_heading_path:
+          type: array
+          items:
+            type: string
+          nullable: true
+          description: |
+            Section heading breadcrumb of the best matching chunk,
+            e.g., ['Authentication', 'JWT Validation']. Present only for
+            hybrid and semantic search types.
+        scope_path:
+          type: string
+          nullable: true
+          description: |
+            Documentation scope path this result belongs to (e.g., "." for root,
+            "packages/auth" for a sub-project). Present when searching across
+            multiple scopes.
+
+    ScopesResponse:
+      type: object
+      required:
+        - scopes
+      properties:
+        scopes:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScopeInfo'
+
+    ScopeInfo:
+      type: object
+      required:
+        - scope_path
+      properties:
+        scope_path:
+          type: string
+          description: |
+            Path to the .autodoc.yaml relative to repository root.
+            "." for root scope.
+          examples:
+            - "."
+            - "packages/auth"
+            - "services/api"
+        title:
+          type: string
+          description: Documentation title for this scope
+        description:
+          type: string
+          description: Documentation description for this scope
+        page_count:
+          type: integer
+          description: Number of wiki pages in this scope
+
+    # ── Webhook Schemas ──
+
+    WebhookAcceptedResponse:
+      type: object
+      required:
+        - job_id
+      properties:
+        job_id:
+          type: string
+          format: uuid
+          description: ID of the triggered documentation generation job
+
+    WebhookPayload:
+      type: object
+      description: |
+        Payload POSTed to the callback_url when a job completes or fails.
+        Delivered with retry (3 retries, exponential backoff: 2s, 4s, 8s)
+        on transient failures.
+      required:
+        - job_id
+        - status
+        - repository_id
+        - branch
+        - completed_at
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        repository_id:
+          type: string
+          format: uuid
+        branch:
+          type: string
+        pull_request_url:
+          type: string
+          format: uri
+          nullable: true
+        quality_report:
+          $ref: '#/components/schemas/QualityReport'
+        token_usage:
+          $ref: '#/components/schemas/TokenUsage'
+        error_message:
+          type: string
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+
+    # ── Health Schemas ──
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - dependencies
+        - timestamp
+      properties:
+        status:
+          type: string
+          enum:
+            - healthy
+            - degraded
+            - unhealthy
+          description: |
+            Overall system health. "healthy" when all critical dependencies are up;
+            "degraded" when non-critical dependencies (e.g., otel) are down;
+            "unhealthy" when critical dependencies (database, prefect) are down.
+        dependencies:
+          type: object
+          required:
+            - database
+            - prefect
+            - otel
+          properties:
+            database:
+              $ref: '#/components/schemas/DependencyHealth'
+            prefect:
+              $ref: '#/components/schemas/DependencyHealth'
+            otel:
+              $ref: '#/components/schemas/DependencyHealth'
+        timestamp:
+          type: string
+          format: date-time
+
+    DependencyHealth:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - healthy
+            - unhealthy
+          description: Individual dependency health status
+        message:
+          type: string
+          nullable: true
+          description: Optional details about the dependency status
+
+    # ── Error Schema ──
+
+    ErrorResponse:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+          description: Human-readable error message
