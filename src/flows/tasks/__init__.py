@@ -3,13 +3,14 @@ from src.flows.tasks.clone import clone_repository
 from src.flows.tasks.discover import discover_autodoc_configs
 from src.flows.tasks.metrics import aggregate_job_metrics
 from src.flows.tasks.pages import generate_pages
-from src.flows.tasks.pr import close_stale_autodoc_prs, create_autodoc_pr
+from src.flows.tasks.pr import ScopeReadme, close_stale_autodoc_prs, create_autodoc_pr
 from src.flows.tasks.readme import distill_readme
 from src.flows.tasks.scan import scan_file_tree
 from src.flows.tasks.sessions import archive_sessions, delete_sessions
 from src.flows.tasks.structure import extract_structure
 
 __all__ = [
+    "ScopeReadme",
     "aggregate_job_metrics",
     "archive_sessions",
     "cleanup_workspace",

@@ -162,6 +162,14 @@ class WikiRepo:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
+    async def count_pages_for_structure(self, wiki_structure_id: uuid.UUID) -> int:
+        """Count wiki pages belonging to a structure."""
+        stmt = sa.select(sa.func.count()).where(
+            WikiPage.wiki_structure_id == wiki_structure_id
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one()
+
     async def duplicate_pages(
         self,
         source_pages: list[WikiPage],

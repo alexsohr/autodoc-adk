@@ -52,7 +52,8 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(repositories_router)
     app.include_router(jobs_router)
-    # app.include_router(documents_router)
+    from src.api.routes.documents import router as documents_router
+    app.include_router(documents_router)
     # app.include_router(search_router)
     # app.include_router(webhooks_router)
 

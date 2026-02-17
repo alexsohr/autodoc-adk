@@ -240,3 +240,46 @@ def load_autodoc_config(
         config.pull_request = _parse_pull_request(raw["pull_request"], config_path)
 
     return config
+
+
+def apply_scope_overlap_exclusions(
+    configs: list[AutodocConfig],
+) -> list[AutodocConfig]:
+    """Auto-exclude child scope directories from parent scopes.
+
+    When a parent scope contains child scope directories (with their own
+    ``.autodoc.yaml``), those directories are added to the parent's exclude
+    list to prevent duplicate documentation.
+
+    Args:
+        configs: List of configs discovered across the repository.
+
+    Returns:
+        The same list of configs, mutated so that each parent's ``exclude``
+        list contains the relative paths of its child scopes.
+    """
+    scope_paths = {c.scope_path for c in configs}
+
+    for config in configs:
+        parent = config.scope_path
+        for other_path in sorted(scope_paths):
+            if other_path == parent:
+                continue
+            # Check if other_path is a child of parent
+            if parent == ".":
+                # Root is parent of everything
+                child_rel = other_path
+            elif other_path.startswith(parent + "/"):
+                child_rel = other_path
+            else:
+                continue
+
+            if child_rel not in config.exclude:
+                config.exclude.append(child_rel)
+                logger.info(
+                    "Auto-excluded child scope '%s' from parent scope '%s'",
+                    child_rel,
+                    parent,
+                )
+
+    return configs

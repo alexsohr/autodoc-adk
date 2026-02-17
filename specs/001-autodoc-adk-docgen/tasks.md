@@ -165,10 +165,10 @@
 
 **Depends on**: US1 (pipeline), US4 (.autodoc.yaml integration)
 
-- [ ] T059 [US5] Extend discover_autodoc_configs to recursively find all .autodoc.yaml files in the cloned repository, return list of AutodocConfig objects with scope_path set to the relative directory path (e.g., ".", "packages/auth") in src/flows/tasks/discover.py
-- [ ] T060 [US5] Implement scope overlap auto-exclusion: when a parent scope directory contains child scope directories with their own .autodoc.yaml, auto-add those child directories to the parent's exclude list to prevent duplicate documentation in src/services/config_loader.py
-- [ ] T061 [US5] Implement parallel scope fan-out: update full_generation_flow and incremental_update_flow to process multiple scopes — use run_deployment() for K8s (prod) or asyncio.gather with direct subflow calls (dev), collect results from all scope flows, create single PR with all scope READMEs in src/flows/full_generation.py and src/flows/incremental_update.py
-- [ ] T062 [US5] Implement list scopes endpoint GET /documents/{repo_id}/scopes returning ScopesResponse (list of ScopeInfo with scope_path, title, description, page_count) with optional branch query parameter per openapi.yaml in src/api/routes/documents.py
+- [x] T059 [US5] Extend discover_autodoc_configs to recursively find all .autodoc.yaml files in the cloned repository, return list of AutodocConfig objects with scope_path set to the relative directory path (e.g., ".", "packages/auth") in src/flows/tasks/discover.py
+- [x] T060 [US5] Implement scope overlap auto-exclusion: when a parent scope directory contains child scope directories with their own .autodoc.yaml, auto-add those child directories to the parent's exclude list to prevent duplicate documentation in src/services/config_loader.py
+- [x] T061 [US5] Implement parallel scope fan-out: update full_generation_flow and incremental_update_flow to process multiple scopes — use run_deployment() for K8s (prod) or asyncio.gather with direct subflow calls (dev), collect results from all scope flows, create single PR with all scope READMEs in src/flows/full_generation.py and src/flows/incremental_update.py
+- [x] T062 [US5] Implement list scopes endpoint GET /documents/{repo_id}/scopes returning ScopesResponse (list of ScopeInfo with scope_path, title, description, page_count) with optional branch query parameter per openapi.yaml in src/api/routes/documents.py
 
 **Checkpoint**: Monorepo with multiple scopes produces independent wiki structures per scope and a combined PR
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 
@@ -15,7 +16,7 @@ from src.flows.tasks.cleanup import cleanup_workspace
 from src.flows.tasks.clone import clone_repository
 from src.flows.tasks.discover import discover_autodoc_configs
 from src.flows.tasks.metrics import aggregate_job_metrics
-from src.flows.tasks.pr import close_stale_autodoc_prs, create_autodoc_pr
+from src.flows.tasks.pr import ScopeReadme, close_stale_autodoc_prs, create_autodoc_pr
 from src.flows.tasks.sessions import archive_sessions, delete_sessions
 
 logger = logging.getLogger(__name__)
@@ -35,9 +36,9 @@ async def full_generation_flow(
     1. Update job PENDING -> RUNNING
     2. Clone repository
     3. Discover .autodoc.yaml configs
-    4. Process scope (extract structure -> generate pages -> distill readme)
-    5. Close stale PRs + create new PR (if not dry_run)
-    6. Aggregate metrics
+    4. Process all scopes in parallel (extract structure -> generate pages -> distill readme)
+    5. Close stale PRs + create new PR with all scope READMEs (if not dry_run)
+    6. Aggregate metrics across all scopes
     7. Check quality gate for final status
     8. Archive + delete sessions (if not dry_run)
     9. Cleanup workspace
@@ -82,28 +83,57 @@ async def full_generation_flow(
             # Step 3: Discover configs
             configs = await discover_autodoc_configs(repo_path=repo_path)
 
-            # Step 4: Process scope (single scope in Phase 3)
-            config = configs[0]
+            # Step 4: Process all scopes in parallel
+            async def _process_scope(cfg):
+                return await scope_processing_flow(
+                    repository_id=repository_id,
+                    job_id=job_id,
+                    branch=branch,
+                    scope_path=cfg.scope_path,
+                    commit_sha=commit_sha,
+                    repo_path=repo_path,
+                    config=cfg,
+                    wiki_repo=wiki_repo,
+                    dry_run=dry_run,
+                )
 
-            scope_result = await scope_processing_flow(
-                repository_id=repository_id,
-                job_id=job_id,
-                branch=branch,
-                scope_path=config.scope_path,
-                commit_sha=commit_sha,
-                repo_path=repo_path,
-                config=config,
-                wiki_repo=wiki_repo,
-                dry_run=dry_run,
+            scope_results = await asyncio.gather(
+                *[_process_scope(cfg) for cfg in configs],
+                return_exceptions=True,
             )
 
-            structure_result = scope_result["structure_result"]
-            page_results = scope_result["page_results"]
-            readme_result = scope_result["readme_result"]
+            # Collect results across all scopes
+            all_structure_results = []
+            all_page_results = []
+            all_readme_results = []
+            scope_readmes: list[ScopeReadme] = []
+
+            for i, result in enumerate(scope_results):
+                if isinstance(result, Exception):
+                    logger.error(
+                        "Scope '%s' failed: %s",
+                        configs[i].scope_path,
+                        result,
+                    )
+                    continue
+
+                sr = result["structure_result"]
+                pr_list = result["page_results"]
+                rr = result["readme_result"]
+
+                if sr:
+                    all_structure_results.append(sr)
+                all_page_results.extend(pr_list)
+                if rr:
+                    all_readme_results.append(rr)
+                    if rr.output:
+                        scope_readmes.append(
+                            ScopeReadme(content=rr.output.content, config=configs[i])
+                        )
 
             # Step 5: PR creation (skip if dry_run)
             pr_url: str | None = None
-            if not dry_run and readme_result and readme_result.output:
+            if not dry_run and scope_readmes:
                 await close_stale_autodoc_prs(
                     repository=repository,
                     branch=branch,
@@ -113,30 +143,40 @@ async def full_generation_flow(
                     repository=repository,
                     branch=branch,
                     job_id=job_id,
-                    readme_content=readme_result.output.content,
+                    scope_readmes=scope_readmes,
                     repo_path=repo_path,
-                    config=config,
                 )
 
-            # Step 6: Aggregate metrics (updates job.quality_report and job.token_usage)
+            # Step 6: Aggregate metrics across all scopes.
+            # Pass the first available structure/readme result for top-level
+            # metrics; all page results are included.
+            structure_result = all_structure_results[0] if all_structure_results else None
+            readme_result = all_readme_results[0] if all_readme_results else None
+
             await aggregate_job_metrics(
                 job_id=job_id,
                 structure_result=structure_result,
-                page_results=page_results,
+                page_results=all_page_results,
                 readme_result=readme_result,
                 job_repo=job_repo,
             )
 
             # Step 7: Check quality gate for final status
             any_below_floor = False
-            if structure_result and structure_result.below_minimum_floor:
-                any_below_floor = True
-            if readme_result and readme_result.below_minimum_floor:
-                any_below_floor = True
-            for pr in page_results:
-                if pr.below_minimum_floor:
+            for sr in all_structure_results:
+                if sr.below_minimum_floor:
                     any_below_floor = True
                     break
+            if not any_below_floor:
+                for rr in all_readme_results:
+                    if rr.below_minimum_floor:
+                        any_below_floor = True
+                        break
+            if not any_below_floor:
+                for pr in all_page_results:
+                    if pr.below_minimum_floor:
+                        any_below_floor = True
+                        break
 
             if any_below_floor:
                 await job_repo.update_status(
