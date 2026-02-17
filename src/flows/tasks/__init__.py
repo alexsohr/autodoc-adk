@@ -1,6 +1,7 @@
 from src.flows.tasks.cleanup import cleanup_workspace
 from src.flows.tasks.clone import clone_repository
 from src.flows.tasks.discover import discover_autodoc_configs
+from src.flows.tasks.embeddings import generate_embeddings_task
 from src.flows.tasks.metrics import aggregate_job_metrics
 from src.flows.tasks.pages import generate_pages
 from src.flows.tasks.pr import ScopeReadme, close_stale_autodoc_prs, create_autodoc_pr
@@ -21,6 +22,7 @@ __all__ = [
     "discover_autodoc_configs",
     "distill_readme",
     "extract_structure",
+    "generate_embeddings_task",
     "generate_pages",
     "scan_file_tree",
 ]

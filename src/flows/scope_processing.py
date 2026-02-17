@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 
@@ -9,6 +10,7 @@ from src.agents.common.agent_result import AgentResult
 from src.agents.readme_distiller.schemas import ReadmeOutput
 from src.agents.structure_extractor.schemas import WikiStructureSpec
 from src.database.repos.wiki_repo import WikiRepo
+from src.flows.tasks.embeddings import generate_embeddings_task
 from src.flows.tasks.pages import generate_pages
 from src.flows.tasks.readme import distill_readme
 from src.flows.tasks.structure import extract_structure
@@ -32,7 +34,7 @@ async def scope_processing_flow(
 ) -> dict:
     """Process a single documentation scope.
 
-    Pipeline: extract_structure -> (if not dry_run: generate_pages -> distill_readme)
+    Pipeline: extract_structure -> (if not dry_run: generate_pages -> (distill_readme || generate_embeddings))
 
     If structure quality gate fails (below_minimum_floor), raises QualityError
     to skip page generation.
@@ -49,7 +51,8 @@ async def scope_processing_flow(
         dry_run: If True, only extract structure (skip pages + readme).
 
     Returns:
-        Dict with structure_result, page_results, readme_result, wiki_structure_id.
+        Dict with structure_result, page_results, readme_result, wiki_structure_id,
+        embedding_count.
     """
     from src.errors import QualityError
     from src.flows.tasks.scan import scan_file_tree
@@ -87,6 +90,7 @@ async def scope_processing_flow(
 
     page_results: list[AgentResult] = []
     readme_result: AgentResult[ReadmeOutput] | None = None
+    embedding_count: int = 0
 
     if not dry_run and structure_result.output is not None and wiki_structure_id is not None:
         # Generate pages
@@ -100,23 +104,20 @@ async def scope_processing_flow(
         )
 
         # Get generated wiki pages from DB for readme distillation
-        # (need the ORM objects with content, not just AgentResults)
-        import sqlalchemy as sa
+        wiki_pages = await wiki_repo.get_pages_for_structure(wiki_structure_id)
 
-        from src.database.models.wiki_page import WikiPage
-
-        stmt = sa.select(WikiPage).where(
-            WikiPage.wiki_structure_id == wiki_structure_id
-        )
-        result = await wiki_repo._session.execute(stmt)
-        wiki_pages = list(result.scalars().all())
-
-        # Distill README
-        readme_result = await distill_readme(
-            job_id=job_id,
-            structure_spec=structure_result.output,
-            wiki_pages=wiki_pages,
-            config=config,
+        # Run README distillation and embedding generation in parallel
+        readme_result, embedding_count = await asyncio.gather(
+            distill_readme(
+                job_id=job_id,
+                structure_spec=structure_result.output,
+                wiki_pages=wiki_pages,
+                config=config,
+            ),
+            generate_embeddings_task(
+                wiki_structure_id=wiki_structure_id,
+                wiki_repo=wiki_repo,
+            ),
         )
 
     return {
@@ -124,4 +125,5 @@ async def scope_processing_flow(
         "page_results": page_results,
         "readme_result": readme_result,
         "wiki_structure_id": wiki_structure_id,
+        "embedding_count": embedding_count,
     }

@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.database.engine import get_session_factory
 from src.database.repos.job_repo import JobRepo
 from src.database.repos.repository_repo import RepositoryRepo
+from src.database.repos.search_repo import SearchRepo
 from src.database.repos.wiki_repo import WikiRepo
 
 
@@ -42,3 +43,10 @@ async def get_wiki_repo(
 ) -> WikiRepo:
     """Provide a WikiRepo instance."""
     return WikiRepo(session)
+
+
+async def get_search_repo(
+    session: AsyncSession = Depends(get_db_session),
+) -> SearchRepo:
+    """Provide a SearchRepo instance."""
+    return SearchRepo(session)
