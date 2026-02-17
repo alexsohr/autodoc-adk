@@ -46,10 +46,12 @@ def create_app() -> FastAPI:
 
     # Routers (added as they are implemented)
     from src.api.routes.health import router as health_router
+    from src.api.routes.jobs import router as jobs_router
+    from src.api.routes.repositories import router as repositories_router
 
     app.include_router(health_router)
-    # app.include_router(repositories_router)
-    # app.include_router(jobs_router)
+    app.include_router(repositories_router)
+    app.include_router(jobs_router)
     # app.include_router(documents_router)
     # app.include_router(search_router)
     # app.include_router(webhooks_router)

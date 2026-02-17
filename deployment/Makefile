@@ -1,4 +1,4 @@
-.PHONY: dev-up dev-down dev-clean migrate api worker deploy-local test lint
+.PHONY: dev-up dev-down dev-clean migrate api worker deploy-local deploy-flows test lint
 
 # ── Infrastructure ──
 
@@ -30,7 +30,14 @@ worker:
 # ── Deployment ──
 
 deploy-local:
-	cd .. && uv run prefect deploy --all
+	@echo "Creating local-dev work pool..."
+	-prefect work-pool create local-dev --type process 2>/dev/null || true
+	@echo "Deploying flows..."
+	cd .. && prefect deploy --all
+	@echo "Local deployment complete. Start worker with: make worker"
+
+deploy-flows:
+	cd .. && prefect deploy --all
 
 # ── Quality ──
 

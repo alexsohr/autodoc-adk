@@ -1,0 +1,69 @@
+# Prefect deployment configuration for AutoDoc ADK
+# See: https://docs.prefect.io/latest/deploy/infrastructure-concepts/work-pools/
+
+# Deployments use AUTODOC_FLOW_DEPLOYMENT_PREFIX env var to select dev/prod target
+# Dev deployments use local-dev work pool (process-based)
+# Prod deployments use orchestrator-pool (kubernetes) or k8s-pool (kubernetes)
+
+name: autodoc-adk
+
+deployments:
+  # Full generation flow - dev
+  - name: dev-full-generation
+    entrypoint: src/flows/full_generation.py:full_generation_flow
+    work_pool:
+      name: local-dev
+    tags:
+      - autodoc
+      - full-generation
+      - dev
+
+  # Full generation flow - prod (orchestrator pool)
+  - name: prod-full-generation
+    entrypoint: src/flows/full_generation.py:full_generation_flow
+    work_pool:
+      name: orchestrator-pool
+    tags:
+      - autodoc
+      - full-generation
+      - prod
+
+  # Scope processing flow - dev
+  - name: dev-scope-processing
+    entrypoint: src/flows/scope_processing.py:scope_processing_flow
+    work_pool:
+      name: local-dev
+    tags:
+      - autodoc
+      - scope-processing
+      - dev
+
+  # Scope processing flow - prod (k8s pool for worker pods)
+  - name: prod-scope-processing
+    entrypoint: src/flows/scope_processing.py:scope_processing_flow
+    work_pool:
+      name: k8s-pool
+    tags:
+      - autodoc
+      - scope-processing
+      - prod
+
+  # Incremental update flow - dev
+  - name: dev-incremental
+    entrypoint: src/flows/incremental_update.py:incremental_update_flow
+    work_pool:
+      name: local-dev
+    tags:
+      - autodoc
+      - incremental
+      - dev
+
+  # Incremental update flow - prod (orchestrator pool)
+  - name: prod-incremental
+    entrypoint: src/flows/incremental_update.py:incremental_update_flow
+    work_pool:
+      name: orchestrator-pool
+    tags:
+      - autodoc
+      - incremental
+      - prod

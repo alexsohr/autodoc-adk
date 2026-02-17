@@ -131,3 +131,62 @@ class WikiRepo:
             stmt = stmt.where(WikiStructure.branch == branch)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
+
+    async def get_baseline_sha(
+        self,
+        repository_id: uuid.UUID,
+        branch: str,
+    ) -> str | None:
+        """Return the oldest commit_sha across all wiki_structures for repo+branch.
+
+        Uses ``min(commit_sha)`` as the safe baseline for incremental updates.
+        Returns ``None`` if no structures exist.
+        """
+        stmt = sa.select(sa.func.min(WikiStructure.commit_sha)).where(
+            WikiStructure.repository_id == repository_id,
+            WikiStructure.branch == branch,
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_pages_for_structure(
+        self,
+        wiki_structure_id: uuid.UUID,
+    ) -> list[WikiPage]:
+        """Return all WikiPage rows belonging to a structure."""
+        stmt = (
+            sa.select(WikiPage)
+            .where(WikiPage.wiki_structure_id == wiki_structure_id)
+            .order_by(WikiPage.page_key.asc())
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def duplicate_pages(
+        self,
+        source_pages: list[WikiPage],
+        target_structure_id: uuid.UUID,
+    ) -> list[WikiPage]:
+        """Copy WikiPage rows to a new structure (for unchanged pages in incremental flow).
+
+        Creates new WikiPage instances referencing ``target_structure_id`` with
+        the same content, quality score, and metadata as the source pages.
+        """
+        copies: list[WikiPage] = []
+        for page in source_pages:
+            copy = WikiPage(
+                wiki_structure_id=target_structure_id,
+                page_key=page.page_key,
+                title=page.title,
+                description=page.description,
+                importance=page.importance,
+                page_type=page.page_type,
+                source_files=page.source_files,
+                related_pages=page.related_pages,
+                content=page.content,
+                quality_score=page.quality_score,
+            )
+            copies.append(copy)
+        self._session.add_all(copies)
+        await self._session.flush()
+        return copies
