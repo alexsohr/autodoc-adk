@@ -92,6 +92,24 @@ async def scan_file_tree(repo_path: str, config: AutodocConfig) -> list[str]:
     return filtered
 
 
+def _matches_pattern(filepath: str, pattern: str) -> bool:
+    """Check if a file path matches an include/exclude pattern.
+
+    Patterns without glob characters (``*``, ``?``, ``[``) are treated as
+    directory prefixes.  For example, ``"src"`` or ``"src/"`` matches all
+    files whose relative path starts with ``src/``, but will **not** match
+    unrelated paths like ``srclib/foo.py``.
+
+    Patterns that contain glob characters are matched using
+    :func:`fnmatch.fnmatch` semantics.
+    """
+    if not any(c in pattern for c in "*?["):
+        # Directory prefix pattern — normalise away any trailing slash
+        prefix = pattern.rstrip("/")
+        return filepath == prefix or filepath.startswith(prefix + "/")
+    return fnmatch(filepath, pattern)
+
+
 def _apply_patterns(
     files: list[str],
     include: list[str],
@@ -102,17 +120,13 @@ def _apply_patterns(
     Include semantics: empty = all files; non-empty = ONLY those paths.
     Exclude always subtracts from the included set.
     """
-    if include:
-        # Only keep files matching at least one include pattern
-        result = [
-            f
-            for f in files
-            if any(fnmatch(f, p) or f.startswith(p.rstrip("*")) for p in include)
-        ]
-    else:
-        result = list(files)
+    result = (
+        [f for f in files if any(_matches_pattern(f, p) for p in include)]
+        if include
+        else list(files)
+    )
 
     if exclude:
-        result = [f for f in result if not any(fnmatch(f, p) for p in exclude)]
+        result = [f for f in result if not any(_matches_pattern(f, p) for p in exclude)]
 
     return result

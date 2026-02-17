@@ -21,3 +21,6 @@ class ReadmeDistillerInput:
     max_length: int | None = None  # word cap
     include_toc: bool = True
     include_badges: bool = False
+    style_audience: str = "developer"
+    style_tone: str = "technical"
+    style_detail_level: str = "standard"

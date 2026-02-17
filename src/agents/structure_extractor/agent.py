@@ -13,8 +13,8 @@ from src.agents.common.loop import QualityLoopConfig, run_quality_loop
 from src.agents.common.mcp_tools import create_filesystem_toolset
 from src.agents.structure_extractor.prompts import (
     STRUCTURE_CRITIC_SYSTEM_PROMPT,
-    STRUCTURE_GENERATOR_SYSTEM_PROMPT,
     build_generator_message,
+    build_generator_system_prompt,
 )
 from src.agents.structure_extractor.schemas import (
     PageSpec,
@@ -97,7 +97,12 @@ class StructureExtractor(BaseAgent[WikiStructureSpec]):
             generator = LlmAgent(
                 name="structure_generator",
                 model=get_model(settings.get_agent_model("structure_generator")),
-                instruction=STRUCTURE_GENERATOR_SYSTEM_PROMPT,
+                instruction=build_generator_system_prompt(
+                    audience=input_data.style_audience,
+                    tone=input_data.style_tone,
+                    detail_level=input_data.style_detail_level,
+                    custom_instructions=input_data.custom_instructions,
+                ),
                 tools=[toolset],
             )
 

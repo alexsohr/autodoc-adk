@@ -70,6 +70,9 @@ async def distill_readme(
         max_length=config.readme.max_length,
         include_toc=config.readme.include_toc,
         include_badges=config.readme.include_badges,
+        style_audience=config.style.audience,
+        style_tone=config.style.tone,
+        style_detail_level=config.style.detail_level,
     )
 
     result = await agent.run(

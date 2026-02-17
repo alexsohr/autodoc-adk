@@ -14,8 +14,8 @@ from src.agents.common.loop import QualityLoopConfig, run_quality_loop
 from src.agents.common.mcp_tools import create_filesystem_toolset
 from src.agents.page_generator.prompts import (
     PAGE_CRITIC_SYSTEM_PROMPT,
-    PAGE_GENERATOR_SYSTEM_PROMPT,
     build_generator_message,
+    build_generator_system_prompt,
 )
 from src.agents.page_generator.schemas import (
     GeneratedPage,
@@ -122,7 +122,12 @@ class PageGenerator(BaseAgent[GeneratedPage]):
             generator = LlmAgent(
                 name="page_generator",
                 model=get_model(settings.get_agent_model("page_generator")),
-                instruction=PAGE_GENERATOR_SYSTEM_PROMPT,
+                instruction=build_generator_system_prompt(
+                    audience=input_data.style_audience,
+                    tone=input_data.style_tone,
+                    detail_level=input_data.style_detail_level,
+                    custom_instructions=input_data.custom_instructions,
+                ),
                 tools=[toolset],
             )
 

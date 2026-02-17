@@ -26,3 +26,6 @@ class PageGeneratorInput:
     repo_path: str
     related_pages: list[str] = field(default_factory=list)
     custom_instructions: str = ""
+    style_audience: str = "developer"
+    style_tone: str = "technical"
+    style_detail_level: str = "standard"

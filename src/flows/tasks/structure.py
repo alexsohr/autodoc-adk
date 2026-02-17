@@ -74,6 +74,9 @@ async def extract_structure(
         file_list=file_list,
         repo_path=repo_path,
         custom_instructions=config.custom_instructions,
+        style_audience=config.style.audience,
+        style_tone=config.style.tone,
+        style_detail_level=config.style.detail_level,
     )
 
     result = await agent.run(

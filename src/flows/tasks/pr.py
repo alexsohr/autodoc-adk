@@ -64,8 +64,11 @@ async def create_autodoc_pr(
     job_short = str(job_id)[:8]
     pr_branch = f"autodoc/{repository.name}-{branch}-{job_short}-{today}"
 
-    # Write README file, commit, and push using git subprocess
-    readme_path = Path(repo_path) / config.readme.output_path
+    # Write README file relative to scope_path (the .autodoc.yaml directory).
+    # For root scope (scope_path="."), this is just output_path.
+    # For nested scopes (e.g. "packages/auth"), the README lands inside that dir.
+    relative_readme = str(Path(config.scope_path) / config.readme.output_path)
+    readme_path = Path(repo_path) / relative_readme
     readme_path.parent.mkdir(parents=True, exist_ok=True)
     readme_path.write_text(readme_content, encoding="utf-8")
 
@@ -84,7 +87,7 @@ async def create_autodoc_pr(
         return stdout.decode().strip()
 
     await _git("checkout", "-b", pr_branch)
-    await _git("add", config.readme.output_path)
+    await _git("add", relative_readme)
     await _git("commit", "-m", f"docs: update documentation for {branch}")
 
     # Push — inject token for auth

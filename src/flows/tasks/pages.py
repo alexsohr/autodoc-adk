@@ -80,6 +80,9 @@ async def generate_pages(
             repo_path=repo_path,
             related_pages=page_spec.related_pages,
             custom_instructions=config.custom_instructions,
+            style_audience=config.style.audience,
+            style_tone=config.style.tone,
+            style_detail_level=config.style.detail_level,
         )
 
         try:

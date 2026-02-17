@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from src.agents.common.prompts import build_style_section
+
 PAGE_GENERATOR_SYSTEM_PROMPT = """You are a technical documentation writer. Your job is to produce a comprehensive, accurate wiki page for a specific part of a codebase.
 
 You will receive a page specification (title, description, type, source files) and have access to read the source files via filesystem tools. Read the relevant source files and produce high-quality documentation in Markdown format.
@@ -48,6 +50,31 @@ Output a JSON object:
     }
 }
 """
+
+
+def build_generator_system_prompt(
+    audience: str = "developer",
+    tone: str = "technical",
+    detail_level: str = "standard",
+    custom_instructions: str = "",
+) -> str:
+    """Build the full system prompt for the page generator.
+
+    Appends documentation style preferences and custom instructions to
+    the base system prompt.
+
+    Args:
+        audience: Target audience for the documentation.
+        tone: Writing tone.
+        detail_level: One of "minimal", "standard", "comprehensive".
+        custom_instructions: Free-form instructions from .autodoc.yaml.
+
+    Returns:
+        Complete system prompt string.
+    """
+    return PAGE_GENERATOR_SYSTEM_PROMPT + build_style_section(
+        audience, tone, detail_level, custom_instructions
+    )
 
 
 def build_generator_message(

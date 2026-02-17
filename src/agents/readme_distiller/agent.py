@@ -12,8 +12,8 @@ from src.agents.common.evaluation import EvaluationResult
 from src.agents.common.loop import QualityLoopConfig, run_quality_loop
 from src.agents.readme_distiller.prompts import (
     README_CRITIC_SYSTEM_PROMPT,
-    README_GENERATOR_SYSTEM_PROMPT,
     build_generator_message,
+    build_generator_system_prompt,
 )
 from src.agents.readme_distiller.schemas import (
     ReadmeDistillerInput,
@@ -71,7 +71,12 @@ class ReadmeDistiller(BaseAgent[ReadmeOutput]):
         generator = LlmAgent(
             name="readme_generator",
             model=get_model(settings.get_agent_model("readme_generator")),
-            instruction=README_GENERATOR_SYSTEM_PROMPT,
+            instruction=build_generator_system_prompt(
+                audience=input_data.style_audience,
+                tone=input_data.style_tone,
+                detail_level=input_data.style_detail_level,
+                custom_instructions=input_data.custom_instructions,
+            ),
         )
 
         critic = LlmAgent(

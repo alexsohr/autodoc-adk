@@ -149,9 +149,9 @@
 
 **Depends on**: US1 (requires working pipeline)
 
-- [ ] T056 [US4] Integrate include/exclude glob patterns from AutodocConfig into scan_file_tree: apply include patterns first (empty = all files), then subtract exclude patterns, log file count before/after filtering in src/flows/tasks/scan.py
-- [ ] T057 [US4] Inject style preferences (audience, tone, detail_level) and custom_instructions text into all agent system prompts — update prompts.py in each agent module (structure_extractor, page_generator, readme_distiller) to accept AutodocConfig and incorporate style/instructions into the prompt template in src/agents/structure_extractor/prompts.py, src/agents/page_generator/prompts.py, and src/agents/readme_distiller/prompts.py
-- [ ] T058 [US4] Integrate readme config into pipeline: apply max_length (word cap) and include_toc/include_badges preferences in ReadmeDistiller prompt, commit README to configured output_path (relative to .autodoc.yaml directory) in PR task in src/agents/readme_distiller/prompts.py and src/flows/tasks/pr.py
+- [x] T056 [US4] Integrate include/exclude glob patterns from AutodocConfig into scan_file_tree: apply include patterns first (empty = all files), then subtract exclude patterns, log file count before/after filtering in src/flows/tasks/scan.py
+- [x] T057 [US4] Inject style preferences (audience, tone, detail_level) and custom_instructions text into all agent system prompts — update prompts.py in each agent module (structure_extractor, page_generator, readme_distiller) to accept AutodocConfig and incorporate style/instructions into the prompt template in src/agents/structure_extractor/prompts.py, src/agents/page_generator/prompts.py, and src/agents/readme_distiller/prompts.py
+- [x] T058 [US4] Integrate readme config into pipeline: apply max_length (word cap) and include_toc/include_badges preferences in ReadmeDistiller prompt, commit README to configured output_path (relative to .autodoc.yaml directory) in PR task in src/agents/readme_distiller/prompts.py and src/flows/tasks/pr.py
 
 **Checkpoint**: Configuration options from .autodoc.yaml visibly affect generated documentation style and scope
 

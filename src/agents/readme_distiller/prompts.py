@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from src.agents.common.prompts import build_style_section
+
 README_GENERATOR_SYSTEM_PROMPT = """You are a README distillation expert. Your job is to synthesize wiki documentation pages into a concise, well-structured README.md file.
 
 You will receive a list of wiki page titles, descriptions, and content summaries. Distill this information into a README that serves as the project's landing page.
@@ -43,6 +45,31 @@ Output a JSON object:
     }
 }
 """
+
+
+def build_generator_system_prompt(
+    audience: str = "developer",
+    tone: str = "technical",
+    detail_level: str = "standard",
+    custom_instructions: str = "",
+) -> str:
+    """Build the full system prompt for the README generator.
+
+    Appends documentation style preferences and custom instructions to
+    the base system prompt.
+
+    Args:
+        audience: Target audience for the documentation.
+        tone: Writing tone.
+        detail_level: One of "minimal", "standard", "comprehensive".
+        custom_instructions: Free-form instructions from .autodoc.yaml.
+
+    Returns:
+        Complete system prompt string.
+    """
+    return README_GENERATOR_SYSTEM_PROMPT + build_style_section(
+        audience, tone, detail_level, custom_instructions
+    )
 
 
 def build_generator_message(
