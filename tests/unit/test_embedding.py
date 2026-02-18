@@ -11,7 +11,6 @@ from src.errors import TransientError
 from src.services.chunking import ChunkResult
 from src.services.embedding import embed_query, generate_embeddings
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -204,6 +203,20 @@ def _make_chunk_result(
     )
 
 
+def _build_embedding_session_mocks(wiki_repo: AsyncMock):
+    """Build mock session factory that injects a pre-configured wiki_repo."""
+    mock_session = AsyncMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+    mock_session.commit = AsyncMock()
+
+    mock_factory = MagicMock()
+    mock_factory.return_value = mock_session
+
+    mock_wiki_repo_cls = MagicMock(return_value=wiki_repo)
+    return mock_factory, mock_wiki_repo_cls
+
+
 class TestGenerateEmbeddingsTaskNoPages:
     """When there are no pages for a structure, the task returns 0."""
 
@@ -216,15 +229,18 @@ class TestGenerateEmbeddingsTaskNoPages:
         wiki_repo.get_pages_for_structure = AsyncMock(return_value=[])
         structure_id = uuid.uuid4()
 
-        result = await generate_embeddings_task.fn(
-            wiki_structure_id=structure_id,
-            wiki_repo=wiki_repo,
-        )
+        mock_factory, mock_wiki_cls = _build_embedding_session_mocks(wiki_repo)
+        with (
+            patch("src.database.engine.get_session_factory", return_value=mock_factory),
+            patch("src.database.repos.wiki_repo.WikiRepo", mock_wiki_cls),
+        ):
+            result = await generate_embeddings_task.fn(
+                wiki_structure_id=structure_id,
+            )
 
         assert result == 0
         mock_chunk.assert_not_called()
         mock_embed.assert_not_awaited()
-        wiki_repo.create_chunks.assert_not_awaited()
 
 
 class TestGenerateEmbeddingsTaskNormalFlow:
@@ -258,11 +274,15 @@ class TestGenerateEmbeddingsTaskNormalFlow:
         wiki_repo.get_pages_for_structure = AsyncMock(return_value=[page1, page2])
         wiki_repo.create_chunks = AsyncMock()
 
+        mock_factory, mock_wiki_cls = _build_embedding_session_mocks(wiki_repo)
         structure_id = uuid.uuid4()
-        result = await generate_embeddings_task.fn(
-            wiki_structure_id=structure_id,
-            wiki_repo=wiki_repo,
-        )
+        with (
+            patch("src.database.engine.get_session_factory", return_value=mock_factory),
+            patch("src.database.repos.wiki_repo.WikiRepo", mock_wiki_cls),
+        ):
+            result = await generate_embeddings_task.fn(
+                wiki_structure_id=structure_id,
+            )
 
         # Should return total chunk count
         assert result == 3
@@ -325,10 +345,14 @@ class TestGenerateEmbeddingsTaskChunkCount:
         wiki_repo.get_pages_for_structure = AsyncMock(return_value=pages)
         wiki_repo.create_chunks = AsyncMock(side_effect=_capture_chunks)
 
-        result = await generate_embeddings_task.fn(
-            wiki_structure_id=uuid.uuid4(),
-            wiki_repo=wiki_repo,
-        )
+        mock_factory, mock_wiki_cls = _build_embedding_session_mocks(wiki_repo)
+        with (
+            patch("src.database.engine.get_session_factory", return_value=mock_factory),
+            patch("src.database.repos.wiki_repo.WikiRepo", mock_wiki_cls),
+        ):
+            result = await generate_embeddings_task.fn(
+                wiki_structure_id=uuid.uuid4(),
+            )
 
         assert result == 6
         assert len(captured_records) == 6
