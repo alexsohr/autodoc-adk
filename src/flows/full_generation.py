@@ -18,7 +18,6 @@ from src.flows.tasks.clone import clone_repository
 from src.flows.tasks.discover import discover_autodoc_configs
 from src.flows.tasks.metrics import aggregate_job_metrics
 from src.flows.tasks.pr import ScopeReadme, close_stale_autodoc_prs, create_autodoc_pr
-from src.flows.tasks.sessions import archive_sessions, delete_sessions
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +52,6 @@ async def full_generation_flow(
     """
     session_factory = get_session_factory()
     repo_path: str | None = None
-    session_ids: list[str] = []
 
     try:
         async with session_factory() as session:
@@ -158,8 +156,10 @@ async def full_generation_flow(
                 )
 
             # Step 6: Aggregate metrics across all scopes.
-            # Pass the first available structure/readme result for top-level
-            # metrics; all page results are included.
+            # TODO: aggregate_job_metrics only accepts a single structure/readme
+            # result. For monorepo (multiple scopes), only the first scope's
+            # structure and readme scores appear in the quality report.
+            # Follow-up: accept list[StructureTaskResult] and list[ReadmeTaskResult].
             structure_result = all_structure_results[0] if all_structure_results else None
             readme_result = all_readme_results[0] if all_readme_results else None
 
@@ -205,10 +205,8 @@ async def full_generation_flow(
                     pull_request_url=pr_url,
                 )
 
-            # Step 8: Session archival (skip on dry_run)
-            if not dry_run and session_ids:
-                await archive_sessions(job_id=job_id, session_ids=session_ids)
-                await delete_sessions(session_ids=session_ids)
+            # TODO: Session archival — session IDs are now created inside
+            # tasks. Needs redesign to collect and archive them at flow level.
 
             await session.commit()
 

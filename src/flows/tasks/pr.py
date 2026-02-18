@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import logging
 import uuid
-from dataclasses import dataclass
 from pathlib import Path
 
 from prefect import task
+from pydantic import BaseModel
 
 from src.errors import TransientError
 from src.flows.schemas import PrRepositoryInfo
@@ -15,9 +15,10 @@ from src.services.config_loader import AutodocConfig
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class ScopeReadme:
+class ScopeReadme(BaseModel):
     """A README produced for a single documentation scope."""
+
+    model_config = {"arbitrary_types_allowed": True}
 
     content: str
     config: AutodocConfig

@@ -331,14 +331,6 @@ class TestFullGenerationHappyPath:
                 return_value={"overall_score": 8.0},
             ) as mock_metrics,
             patch(
-                "src.flows.full_generation.archive_sessions",
-                new_callable=AsyncMock,
-            ),
-            patch(
-                "src.flows.full_generation.delete_sessions",
-                new_callable=AsyncMock,
-            ),
-            patch(
                 "src.flows.full_generation.cleanup_workspace",
                 new_callable=AsyncMock,
             ) as mock_cleanup,
@@ -430,14 +422,6 @@ class TestFullGenerationDryRun:
                 return_value={"overall_score": 8.5},
             ),
             patch(
-                "src.flows.full_generation.archive_sessions",
-                new_callable=AsyncMock,
-            ) as mock_archive,
-            patch(
-                "src.flows.full_generation.delete_sessions",
-                new_callable=AsyncMock,
-            ) as mock_delete_sessions,
-            patch(
                 "src.flows.full_generation.cleanup_workspace",
                 new_callable=AsyncMock,
             ),
@@ -459,9 +443,6 @@ class TestFullGenerationDryRun:
         mock_create_pr.assert_not_awaited()
         # close_stale_autodoc_prs is also skipped because scope_readmes is empty
         mock_close_prs.assert_not_awaited()
-        # Session archival should be skipped
-        mock_archive.assert_not_awaited()
-        mock_delete_sessions.assert_not_awaited()
 
         # Job should still reach COMPLETED
         final_call = mock_job_repo.update_status.call_args_list[-1]
@@ -656,14 +637,6 @@ class TestFullGenerationCallbackDelivery:
                 "src.flows.full_generation.aggregate_job_metrics",
                 new_callable=AsyncMock,
                 return_value={"overall_score": 8.0},
-            ),
-            patch(
-                "src.flows.full_generation.archive_sessions",
-                new_callable=AsyncMock,
-            ),
-            patch(
-                "src.flows.full_generation.delete_sessions",
-                new_callable=AsyncMock,
             ),
             patch(
                 "src.flows.full_generation.cleanup_workspace",
@@ -1179,14 +1152,6 @@ class TestIncrementalDryRun:
                 return_value={"overall_score": 8.0},
             ),
             patch(
-                "src.flows.incremental_update.archive_sessions",
-                new_callable=AsyncMock,
-            ) as mock_archive,
-            patch(
-                "src.flows.incremental_update.delete_sessions",
-                new_callable=AsyncMock,
-            ) as mock_delete_sessions,
-            patch(
                 "src.flows.incremental_update.cleanup_workspace",
                 new_callable=AsyncMock,
             ),
@@ -1207,9 +1172,6 @@ class TestIncrementalDryRun:
         # PR should be skipped (no readme results -> no scope_readmes)
         mock_create_pr.assert_not_awaited()
         mock_close_prs.assert_not_awaited()
-        # Session archival should be skipped
-        mock_archive.assert_not_awaited()
-        mock_delete_sessions.assert_not_awaited()
 
 
 @pytest.mark.integration

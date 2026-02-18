@@ -29,7 +29,6 @@ from src.flows.tasks.pages import _reconstruct_page_specs, generate_pages
 from src.flows.tasks.pr import ScopeReadme, close_stale_autodoc_prs, create_autodoc_pr
 from src.flows.tasks.readme import distill_readme
 from src.flows.tasks.scan import scan_file_tree
-from src.flows.tasks.sessions import archive_sessions, delete_sessions
 from src.flows.tasks.structure import extract_structure
 from src.providers.base import get_provider
 from src.services.config_loader import AutodocConfig
@@ -386,7 +385,6 @@ async def incremental_update_flow(
     """
     session_factory = get_session_factory()
     repo_path: str | None = None
-    session_ids: list[str] = []
 
     try:
         async with session_factory() as session:
@@ -548,6 +546,9 @@ async def incremental_update_flow(
                 )
 
             # Step 9: Aggregate metrics across all scopes
+            # TODO: aggregate_job_metrics only accepts a single structure/readme
+            # result. For monorepo (multiple scopes), only the first scope's
+            # structure and readme scores appear in the quality report.
             structure_result = all_structure_results[0] if all_structure_results else None
             readme_result = all_readme_results[0] if all_readme_results else None
 
@@ -602,10 +603,8 @@ async def incremental_update_flow(
                     pull_request_url=pr_url,
                 )
 
-            # Step 11: Session archival (skip on dry_run)
-            if not dry_run and session_ids:
-                await archive_sessions(job_id=job_id, session_ids=session_ids)
-                await delete_sessions(session_ids=session_ids)
+            # TODO: Session archival — session IDs are now created inside
+            # tasks. Needs redesign to collect and archive them at flow level.
 
             await session.commit()
 
