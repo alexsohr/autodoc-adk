@@ -130,7 +130,8 @@ class StructureExtractor(BaseAgent[WikiStructureSpec]):
                 app_name="autodoc-structure-extractor",
                 initial_message=build_generator_message(
                     input_data.file_list,
-                    input_data.custom_instructions,
+                    custom_instructions=input_data.custom_instructions,
+                    readme_content=input_data.readme_content,
                 ),
                 parse_output=_parse_structure_output,
                 parse_evaluation=_parse_evaluation,

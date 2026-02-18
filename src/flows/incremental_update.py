@@ -13,6 +13,7 @@ from src.database.repos.job_repo import JobRepo
 from src.database.repos.repository_repo import RepositoryRepo
 from src.database.repos.wiki_repo import WikiRepo
 from src.errors import PermanentError, QualityError
+from src.flows.scope_processing import read_readme
 from src.flows.tasks.callback import deliver_callback
 from src.flows.tasks.cleanup import cleanup_workspace
 from src.flows.tasks.clone import clone_repository
@@ -142,6 +143,8 @@ async def _process_incremental_scope(
             repo_path=repo_path, config=config,
         )
 
+        readme_content = read_readme(repo_path)
+
         structure_result = await extract_structure(
             repository_id=repository_id,
             job_id=job_id,
@@ -152,6 +155,7 @@ async def _process_incremental_scope(
             repo_path=repo_path,
             config=config,
             wiki_repo=wiki_repo,
+            readme_content=readme_content,
         )
 
         if structure_result.below_minimum_floor:

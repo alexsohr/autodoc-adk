@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import uuid
 
 from prefect import flow
@@ -17,6 +18,41 @@ from src.flows.tasks.structure import extract_structure
 from src.services.config_loader import AutodocConfig
 
 logger = logging.getLogger(__name__)
+
+# Common README filenames in priority order
+_README_CANDIDATES = [
+    "README.md",
+    "README.rst",
+    "README.txt",
+    "README",
+    "readme.md",
+    "Readme.md",
+]
+
+
+def read_readme(repo_path: str) -> str:
+    """Read the repository README file if it exists.
+
+    Tries common README filenames in priority order and returns the content
+    of the first one found. Returns empty string if no README is found.
+
+    Args:
+        repo_path: Absolute path to the cloned repository.
+
+    Returns:
+        README content as a string, or empty string if not found.
+    """
+    for candidate in _README_CANDIDATES:
+        readme_path = os.path.join(repo_path, candidate)
+        try:
+            with open(readme_path, encoding="utf-8", errors="replace") as f:
+                content = f.read()
+            logger.info("Found README at %s", readme_path)
+            return content
+        except OSError:
+            continue
+    logger.info("No README found in %s", repo_path)
+    return ""
 
 
 @flow(name="scope_processing", timeout_seconds=3600)
@@ -60,6 +96,9 @@ async def scope_processing_flow(
     # Scan file tree for this scope
     file_list = await scan_file_tree(repo_path=repo_path, config=config)
 
+    # Read README for structure extraction context
+    readme_content = read_readme(repo_path)
+
     # Extract structure
     structure_result: AgentResult[WikiStructureSpec] = await extract_structure(
         repository_id=repository_id,
@@ -71,6 +110,7 @@ async def scope_processing_flow(
         repo_path=repo_path,
         config=config,
         wiki_repo=wiki_repo,
+        readme_content=readme_content,
     )
 
     # Check structure quality gate

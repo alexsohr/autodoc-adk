@@ -36,6 +36,7 @@ async def extract_structure(
     repo_path: str,
     config: AutodocConfig,
     wiki_repo: WikiRepo,
+    readme_content: str = "",
 ) -> AgentResult[WikiStructureSpec]:
     """Run StructureExtractor agent and save result to database.
 
@@ -53,6 +54,7 @@ async def extract_structure(
         repo_path: Path to cloned repository.
         config: AutodocConfig for this scope.
         wiki_repo: WikiRepo instance for DB operations.
+        readme_content: Contents of the repository README, if available.
 
     Returns:
         AgentResult[WikiStructureSpec] with structure output and quality metadata.
@@ -73,6 +75,7 @@ async def extract_structure(
     input_data = StructureExtractorInput(
         file_list=file_list,
         repo_path=repo_path,
+        readme_content=readme_content,
         custom_instructions=config.custom_instructions,
         style_audience=config.style.audience,
         style_tone=config.style.tone,
