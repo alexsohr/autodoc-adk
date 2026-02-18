@@ -237,7 +237,7 @@
 
 **Depends on**: US1 (repositories), US6 (search capability)
 
-- [ ] T078 [US9] Implement FastMCP server: find_repository tool (search repos by name/URL/partial match via RepositoryRepo, return id/name/provider/branches), query_documents tool (accept repository_id, delegate to search service for hybrid search, return ranked pages with snippets), use database engine and repos from src/database/ in src/mcp_server.py
+- [x] T078 [US9] Implement FastMCP server: find_repository tool (search repos by name/URL/partial match via RepositoryRepo, return id/name/provider/branches), query_documents tool (accept repository_id, delegate to search service for hybrid search, return ranked pages with snippets), use database engine and repos from src/database/ in src/mcp_server.py
 
 **Checkpoint**: MCP client can discover repositories and query their documentation
 
