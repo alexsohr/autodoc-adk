@@ -48,6 +48,7 @@ class JobRepo:
         )
         self._session.add(job)
         await self._session.flush()
+        await self._session.refresh(job)
         return job
 
     async def get_by_id(self, job_id: uuid.UUID) -> Job | None:
@@ -112,6 +113,7 @@ class JobRepo:
         for key, value in kwargs.items():
             setattr(job, key, value)
         await self._session.flush()
+        await self._session.refresh(job)
         return job
 
     async def get_active_for_repo(

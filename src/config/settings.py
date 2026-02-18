@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     STRUCTURE_COVERAGE_CRITERION_FLOOR: float = 5.0
     PAGE_ACCURACY_CRITERION_FLOOR: float = 5.0
 
+    # Clone directory (None = system temp directory)
+    CLONE_DIR: str = ""
+
     # Repository size limits
     MAX_REPO_SIZE: int = 524_288_000  # 500MB
     MAX_TOTAL_FILES: int = 5000

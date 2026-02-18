@@ -5,6 +5,7 @@ import tempfile
 
 from prefect import task
 
+from src.config.settings import get_settings
 from src.flows.schemas import CloneInput
 from src.providers.base import get_provider
 
@@ -23,7 +24,8 @@ async def clone_repository(clone_input: CloneInput, branch: str) -> tuple[str, s
         Tuple of (repo_path, commit_sha).
     """
     provider = get_provider(clone_input.provider)
-    dest_dir = tempfile.mkdtemp(prefix="autodoc_")
+    base_dir = get_settings().CLONE_DIR or None
+    dest_dir = tempfile.mkdtemp(prefix="autodoc_", dir=base_dir)
 
     repo_path, commit_sha = await provider.clone_repository(
         url=clone_input.url,
