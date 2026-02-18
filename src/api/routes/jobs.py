@@ -11,7 +11,9 @@ from src.api.schemas.jobs import (
     CreateJobRequest,
     JobResponse,
     JobStatus,
+    LogEntry,
     PaginatedJobResponse,
+    TaskState,
     WikiStructureResponse,
 )
 from src.config.settings import get_settings
@@ -210,3 +212,213 @@ async def get_job_structure(
         raise HTTPException(status_code=404, detail="No structure found for this job")
 
     return WikiStructureResponse.model_validate(structure)
+
+
+# ---------------------------------------------------------------------------
+# T071: POST /jobs/{job_id}/cancel
+# ---------------------------------------------------------------------------
+
+
+@router.post("/jobs/{job_id}/cancel", response_model=JobResponse)
+async def cancel_job(
+    job_id: UUID,
+    job_repo: JobRepo = Depends(get_job_repo),
+) -> JobResponse:
+    """Cancel a PENDING or RUNNING job.
+
+    For RUNNING jobs with a prefect_flow_run_id, cancels via Prefect API.
+    For PENDING jobs with no prefect_flow_run_id, updates status directly.
+    Returns 409 for non-cancellable states.
+    """
+    job = await job_repo.get_by_id(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.status not in ("PENDING", "RUNNING"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Job is in {job.status} state and cannot be cancelled",
+        )
+
+    # For RUNNING jobs with a Prefect flow run, cancel via Prefect API
+    if job.status == "RUNNING" and job.prefect_flow_run_id:
+        try:
+            import prefect.states
+            from prefect.client.orchestration import get_client
+
+            async with get_client() as client:
+                await client.set_flow_run_state(
+                    flow_run_id=UUID(job.prefect_flow_run_id),
+                    state=prefect.states.Cancelling(),
+                )
+        except Exception:
+            logger.warning(
+                "Failed to cancel Prefect flow run %s, proceeding with DB update",
+                job.prefect_flow_run_id,
+            )
+
+    updated = await job_repo.update_status(job_id, "CANCELLED")
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    logger.info("Cancelled job %s (was %s)", job_id, job.status)
+    return JobResponse.model_validate(updated)
+
+
+# ---------------------------------------------------------------------------
+# T072: POST /jobs/{job_id}/retry
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/jobs/{job_id}/retry",
+    response_model=JobResponse,
+)
+async def retry_job(
+    job_id: UUID,
+    background_tasks: BackgroundTasks,
+    job_repo: JobRepo = Depends(get_job_repo),
+    repository_repo: RepositoryRepo = Depends(get_repository_repo),
+    wiki_repo: WikiRepo = Depends(get_wiki_repo),
+) -> JobResponse:
+    """Retry a FAILED job. Resets to PENDING and triggers new flow run.
+
+    Returns 409 for non-FAILED states (COMPLETED and CANCELLED are terminal).
+    """
+    job = await job_repo.get_by_id(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.status != "FAILED":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Only FAILED jobs can be retried. Current status: {job.status}",
+        )
+
+    # Reset to PENDING, clear error fields
+    updated = await job_repo.update_status(
+        job_id,
+        "PENDING",
+        error_message=None,
+        prefect_flow_run_id=None,
+        commit_sha=None,
+    )
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # Re-determine mode (same logic as create_job)
+    if updated.force:
+        mode = "full"
+    else:
+        structure = await wiki_repo.get_latest_structure(
+            repository_id=updated.repository_id,
+            branch=updated.branch,
+        )
+        mode = "full" if structure is None else "incremental"
+
+    # Re-submit flow
+    background_tasks.add_task(
+        _submit_flow,
+        mode=mode,
+        repository_id=updated.repository_id,
+        job_id=updated.id,
+        branch=updated.branch,
+        dry_run=updated.dry_run,
+    )
+
+    logger.info("Retrying job %s (mode=%s)", job_id, mode)
+    return JobResponse.model_validate(updated)
+
+
+# ---------------------------------------------------------------------------
+# T073: GET /jobs/{job_id}/tasks
+# ---------------------------------------------------------------------------
+
+
+@router.get("/jobs/{job_id}/tasks", response_model=list[TaskState])
+async def get_job_tasks(
+    job_id: UUID,
+    job_repo: JobRepo = Depends(get_job_repo),
+) -> list[TaskState]:
+    """Get Prefect task states for a job's flow run."""
+    job = await job_repo.get_by_id(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if not job.prefect_flow_run_id:
+        return []
+
+    try:
+        from prefect.client.orchestration import get_client
+        from prefect.client.schemas.filters import (
+            TaskRunFilter,
+            TaskRunFilterFlowRunId,
+        )
+
+        async with get_client() as client:
+            task_runs = await client.read_task_runs(
+                task_run_filter=TaskRunFilter(
+                    flow_run_id=TaskRunFilterFlowRunId(
+                        any_=[job.prefect_flow_run_id],
+                    ),
+                ),
+            )
+    except Exception:
+        logger.warning("Failed to query Prefect task runs for job %s", job_id)
+        return []
+
+    return [
+        TaskState(
+            task_name=tr.name,
+            state=tr.state.name if tr.state else "Unknown",
+            started_at=tr.start_time,
+            completed_at=tr.end_time if tr.state and tr.state.is_final() else None,
+            message=tr.state.message if tr.state else None,
+        )
+        for tr in task_runs
+    ]
+
+
+# ---------------------------------------------------------------------------
+# T073: GET /jobs/{job_id}/logs
+# ---------------------------------------------------------------------------
+
+
+@router.get("/jobs/{job_id}/logs", response_model=list[LogEntry])
+async def get_job_logs(
+    job_id: UUID,
+    job_repo: JobRepo = Depends(get_job_repo),
+) -> list[LogEntry]:
+    """Get Prefect flow run logs for a job."""
+    job = await job_repo.get_by_id(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if not job.prefect_flow_run_id:
+        return []
+
+    try:
+        from prefect.client.orchestration import get_client
+        from prefect.client.schemas.filters import LogFilter, LogFilterFlowRunId
+
+        async with get_client() as client:
+            logs = await client.read_logs(
+                log_filter=LogFilter(
+                    flow_run_id=LogFilterFlowRunId(
+                        any_=[job.prefect_flow_run_id],
+                    ),
+                ),
+            )
+    except Exception:
+        logger.warning("Failed to query Prefect logs for job %s", job_id)
+        return []
+
+    return [
+        LogEntry(
+            timestamp=log.timestamp,
+            level=log.level_name if hasattr(log, "level_name") else str(log.level),
+            message=log.message,
+            task_name=None,  # Prefect logs don't always have task association
+        )
+        for log in logs
+    ]

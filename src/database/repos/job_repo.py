@@ -133,3 +133,9 @@ class JobRepo:
         )
         result = await self._session.execute(stmt)
         return result.scalars().first()
+
+    async def get_running_jobs(self) -> list[Job]:
+        """Return all jobs currently in RUNNING status."""
+        stmt = sa.select(Job).where(Job.status == "RUNNING")
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())

@@ -1,3 +1,4 @@
+from src.flows.tasks.callback import deliver_callback
 from src.flows.tasks.cleanup import cleanup_workspace
 from src.flows.tasks.clone import clone_repository
 from src.flows.tasks.discover import discover_autodoc_configs
@@ -13,6 +14,7 @@ from src.flows.tasks.structure import extract_structure
 __all__ = [
     "ScopeReadme",
     "aggregate_job_metrics",
+    "deliver_callback",
     "archive_sessions",
     "cleanup_workspace",
     "clone_repository",

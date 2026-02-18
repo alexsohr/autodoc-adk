@@ -67,3 +67,29 @@ deployments:
       - autodoc
       - incremental
       - prod
+
+  # Orphan workspace cleanup flow - dev
+  - name: dev-cleanup
+    entrypoint: src/flows/tasks/cleanup.py:cleanup_orphan_workspaces
+    work_pool:
+      name: local-dev
+    schedules:
+      - cron: "*/15 * * * *"
+        timezone: "UTC"
+    tags:
+      - autodoc
+      - cleanup
+      - dev
+
+  # Orphan workspace cleanup flow - prod
+  - name: prod-cleanup
+    entrypoint: src/flows/tasks/cleanup.py:cleanup_orphan_workspaces
+    work_pool:
+      name: k8s-pool
+    schedules:
+      - cron: "*/15 * * * *"
+        timezone: "UTC"
+    tags:
+      - autodoc
+      - cleanup
+      - prod

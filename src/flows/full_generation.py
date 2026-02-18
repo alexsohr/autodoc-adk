@@ -12,6 +12,7 @@ from src.database.repos.repository_repo import RepositoryRepo
 from src.database.repos.wiki_repo import WikiRepo
 from src.errors import PermanentError, QualityError
 from src.flows.scope_processing import scope_processing_flow
+from src.flows.tasks.callback import deliver_callback
 from src.flows.tasks.cleanup import cleanup_workspace
 from src.flows.tasks.clone import clone_repository
 from src.flows.tasks.discover import discover_autodoc_configs
@@ -179,16 +180,20 @@ async def full_generation_flow(
                         break
 
             if any_below_floor:
+                final_status = "FAILED"
+                error_msg = "Quality gate failed: agent output below minimum floor"
                 await job_repo.update_status(
                     job_id,
-                    "FAILED",
-                    error_message="Quality gate failed: agent output below minimum floor",
+                    final_status,
+                    error_message=error_msg,
                     pull_request_url=pr_url,
                 )
             else:
+                final_status = "COMPLETED"
+                error_msg = None
                 await job_repo.update_status(
                     job_id,
-                    "COMPLETED",
+                    final_status,
                     pull_request_url=pr_url,
                 )
 
@@ -199,40 +204,84 @@ async def full_generation_flow(
 
             await session.commit()
 
+            # Step 10: Deliver callback (outside DB transaction)
+            if job.callback_url:
+                await deliver_callback(
+                    job_id=job_id,
+                    status=final_status,
+                    repository_id=repository_id,
+                    branch=branch,
+                    callback_url=job.callback_url,
+                    pull_request_url=pr_url,
+                    quality_report=job.quality_report,
+                    token_usage=job.token_usage,
+                    error_message=error_msg,
+                )
+
     except QualityError as exc:
         logger.warning("Quality gate failed for job %s: %s", job_id, exc)
+        error_msg = str(exc)
         async with session_factory() as session:
             job_repo = JobRepo(session)
-            await job_repo.update_status(
+            job = await job_repo.update_status(
                 job_id,
                 "FAILED",
-                error_message=str(exc),
+                error_message=error_msg,
             )
             await session.commit()
+        if job and job.callback_url:
+            await deliver_callback(
+                job_id=job_id,
+                status="FAILED",
+                repository_id=repository_id,
+                branch=branch,
+                callback_url=job.callback_url,
+                error_message=error_msg,
+            )
     except TimeoutError:
         logger.error("Flow timed out for job %s", job_id)
+        error_msg = "Flow timed out after 3600 seconds"
         try:
             async with session_factory() as session:
                 job_repo = JobRepo(session)
-                await job_repo.update_status(
+                job = await job_repo.update_status(
                     job_id,
                     "FAILED",
-                    error_message="Flow timed out after 3600 seconds",
+                    error_message=error_msg,
                 )
                 await session.commit()
+            if job and job.callback_url:
+                await deliver_callback(
+                    job_id=job_id,
+                    status="FAILED",
+                    repository_id=repository_id,
+                    branch=branch,
+                    callback_url=job.callback_url,
+                    error_message=error_msg,
+                )
         except Exception:
             logger.exception("Failed to update job status to FAILED after timeout")
     except Exception as exc:
         logger.exception("Full generation flow failed for job %s", job_id)
+        error_msg = f"Flow error: {exc}"
         try:
             async with session_factory() as session:
                 job_repo = JobRepo(session)
-                await job_repo.update_status(
+                job = await job_repo.update_status(
                     job_id,
                     "FAILED",
-                    error_message=f"Flow error: {exc}",
+                    error_message=error_msg,
                 )
                 await session.commit()
+            if job and job.callback_url:
+                await deliver_callback(
+                    job_id=job_id,
+                    status="FAILED",
+                    repository_id=repository_id,
+                    branch=branch,
+                    callback_url=job.callback_url,
+                    error_message=error_msg,
+                )
         except Exception:
             logger.exception("Failed to update job status to FAILED")
     finally:

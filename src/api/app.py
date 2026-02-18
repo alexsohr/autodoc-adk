@@ -12,7 +12,19 @@ from src.errors import PermanentError, QualityError, TransientError
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """Application lifespan: cleanup database engine on shutdown."""
+    """Application lifespan: reconcile stale jobs on startup, cleanup on shutdown."""
+    from src.database.engine import get_session_factory
+    from src.flows.tasks.reconcile import reconcile_stale_jobs
+
+    try:
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            await reconcile_stale_jobs(session)
+            await session.commit()
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("Failed to reconcile stale jobs on startup")
+
     yield
     await dispose_engine()
 
@@ -53,8 +65,9 @@ def create_app() -> FastAPI:
     app.include_router(repositories_router)
     app.include_router(jobs_router)
     from src.api.routes.documents import router as documents_router
+    from src.api.routes.webhooks import router as webhooks_router
+
     app.include_router(documents_router)
-    # app.include_router(search_router)
-    # app.include_router(webhooks_router)
+    app.include_router(webhooks_router)
 
     return app
