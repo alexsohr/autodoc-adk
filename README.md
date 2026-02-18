@@ -571,10 +571,14 @@ AutoDoc detects the provider from request headers (`X-GitHub-Event` for GitHub, 
 # Install dependencies
 uv sync
 
-# Start infrastructure
+# Copy environment config
+cp .env.example .env
+# Edit .env with your LLM provider credentials (see .env.example for all options)
+
+# Start infrastructure (PostgreSQL + Prefect Server)
 cd deployment && make dev-up && cd ..
 
-# Run migrations
+# Run database migrations
 cd deployment && make migrate && cd ..
 
 # Deploy Prefect flows
@@ -585,6 +589,22 @@ cd deployment && make worker
 
 # Start API with hot reload (terminal 2)
 cd deployment && make api
+```
+
+Verify the setup:
+
+```bash
+# Health check (database and Prefect should be "healthy")
+curl http://localhost:8080/health
+
+# Swagger UI
+open http://localhost:8080/docs
+```
+
+To stop everything:
+
+```bash
+cd deployment && make dev-down
 ```
 
 ### Code Quality
