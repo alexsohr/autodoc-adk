@@ -9,8 +9,8 @@ from prefect import flow
 from src.database.engine import get_session_factory
 from src.database.repos.job_repo import JobRepo
 from src.database.repos.repository_repo import RepositoryRepo
-from src.database.repos.wiki_repo import WikiRepo
 from src.errors import PermanentError, QualityError
+from src.flows.schemas import CloneInput, PrRepositoryInfo
 from src.flows.scope_processing import scope_processing_flow
 from src.flows.tasks.callback import deliver_callback
 from src.flows.tasks.cleanup import cleanup_workspace
@@ -59,7 +59,6 @@ async def full_generation_flow(
         async with session_factory() as session:
             job_repo = JobRepo(session)
             repo_repo = RepositoryRepo(session)
-            wiki_repo = WikiRepo(session)
 
             # Step 1: Update job status to RUNNING
             job = await job_repo.update_status(job_id, "RUNNING")
@@ -72,8 +71,13 @@ async def full_generation_flow(
                 raise PermanentError(f"Repository {repository_id} not found")
 
             # Step 2: Clone repository
+            clone_input = CloneInput(
+                url=repository.url,
+                provider=repository.provider,
+                access_token=repository.access_token,
+            )
             repo_path, commit_sha = await clone_repository(
-                repository=repository,
+                clone_input=clone_input,
                 branch=branch,
             )
 
@@ -94,7 +98,6 @@ async def full_generation_flow(
                     commit_sha=commit_sha,
                     repo_path=repo_path,
                     config=cfg,
-                    wiki_repo=wiki_repo,
                     dry_run=dry_run,
                 )
 
@@ -118,30 +121,36 @@ async def full_generation_flow(
                     )
                     continue
 
-                sr = result["structure_result"]
-                pr_list = result["page_results"]
-                rr = result["readme_result"]
+                sr = result.structure_result
+                pr_list = result.page_results
+                rr = result.readme_result
 
                 if sr:
                     all_structure_results.append(sr)
                 all_page_results.extend(pr_list)
                 if rr:
                     all_readme_results.append(rr)
-                    if rr.output:
-                        scope_readmes.append(
-                            ScopeReadme(content=rr.output.content, config=configs[i])
-                        )
+                    scope_readmes.append(
+                        ScopeReadme(content=rr.content, config=configs[i])
+                    )
 
             # Step 5: PR creation (skip if dry_run)
             pr_url: str | None = None
             if not dry_run and scope_readmes:
+                repo_info = PrRepositoryInfo(
+                    url=repository.url,
+                    provider=repository.provider,
+                    name=repository.name,
+                    access_token=repository.access_token,
+                    public_branch=repository.public_branch,
+                )
                 await close_stale_autodoc_prs(
-                    repository=repository,
+                    repo_info=repo_info,
                     branch=branch,
                 )
 
                 pr_url = await create_autodoc_pr(
-                    repository=repository,
+                    repo_info=repo_info,
                     branch=branch,
                     job_id=job_id,
                     scope_readmes=scope_readmes,
@@ -159,7 +168,6 @@ async def full_generation_flow(
                 structure_result=structure_result,
                 page_results=all_page_results,
                 readme_result=readme_result,
-                job_repo=job_repo,
             )
 
             # Step 7: Check quality gate for final status
