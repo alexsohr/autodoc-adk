@@ -10,7 +10,8 @@ from src.agents.readme_distiller import (
     ReadmeDistillerInput,
 )
 from src.config.settings import get_settings
-from src.services.config_loader import autodoc_config_from_dict
+from src.flows.schemas import ReadmeTaskResult, TokenUsageResult
+from src.services.config_loader import AutodocConfig
 
 logger = logging.getLogger(__name__)
 
@@ -22,11 +23,11 @@ async def distill_readme(
     structure_title: str,
     structure_description: str,
     page_summaries: list[dict],
-    config_dict: dict,
-) -> dict:
+    config: AutodocConfig,
+) -> ReadmeTaskResult:
     """Distill wiki pages into a README.
 
-    Accepts page summaries as dicts and config as a serializable dict
+    Accepts page summaries as dicts and a typed AutodocConfig
     for cross-process execution.
 
     Args:
@@ -34,13 +35,12 @@ async def distill_readme(
         structure_title: The wiki structure title.
         structure_description: The wiki structure description.
         page_summaries: List of dicts with keys: page_key, title, description, content.
-        config_dict: Serialized AutodocConfig dict.
+        config: Typed AutodocConfig object.
 
     Returns:
-        Dict with README content and quality metadata.
+        ReadmeTaskResult with README content and quality metadata.
     """
     settings = get_settings()
-    config = autodoc_config_from_dict(config_dict)
 
     db_url = settings.DATABASE_URL.replace("+asyncpg", "")
     from google.adk.sessions import DatabaseSessionService
@@ -76,16 +76,16 @@ async def distill_readme(
         len(result.output.content) if result.output else 0,
     )
 
-    return {
-        "final_score": result.final_score,
-        "passed_quality_gate": result.passed_quality_gate,
-        "below_minimum_floor": result.below_minimum_floor,
-        "attempts": result.attempts,
-        "content": result.output.content if result.output else "",
-        "token_usage": {
-            "input_tokens": result.token_usage.input_tokens,
-            "output_tokens": result.token_usage.output_tokens,
-            "total_tokens": result.token_usage.total_tokens,
-            "calls": result.token_usage.calls,
-        },
-    }
+    return ReadmeTaskResult(
+        final_score=result.final_score,
+        passed_quality_gate=result.passed_quality_gate,
+        below_minimum_floor=result.below_minimum_floor,
+        attempts=result.attempts,
+        content=result.output.content if result.output else "",
+        token_usage=TokenUsageResult(
+            input_tokens=result.token_usage.input_tokens,
+            output_tokens=result.token_usage.output_tokens,
+            total_tokens=result.token_usage.total_tokens,
+            calls=result.token_usage.calls,
+        ),
+    )
