@@ -30,26 +30,33 @@ AutoDoc registers Git repositories, clones them, and runs three AI agents to pro
 
 Each agent uses a **Generator + Critic loop**: a Generator LlmAgent produces content, then a separate Critic LlmAgent evaluates it against a weighted rubric (accuracy, completeness, clarity). If the score falls below a configurable threshold, the Critic's feedback feeds back to the Generator for another attempt (up to 3 by default). The best-scoring attempt is kept.
 
+```mermaid
+flowchart TD
+    A[Register Repo] --> B[Clone]
+    B --> C[Scan Files]
+    C --> D[Extract Structure<br><i>Generator + Critic</i>]
+
+    D --> E1[Generate Page 1<br><i>Generator + Critic</i>]
+    D --> E2[Generate Page 2<br><i>Generator + Critic</i>]
+    D --> E3[Generate Page N<br><i>Generator + Critic</i>]
+
+    E1 & E2 & E3 --> F1[Distill README<br><i>Generator + Critic</i>]
+    E1 & E2 & E3 --> F2[Generate Embeddings<br><i>chunk + vectorize</i>]
+
+    F1 & F2 --> G[Close Stale PRs]
+    G --> H[Create PR]
+    H --> I[Archive Sessions]
+    I --> J[Cleanup Workspace]
 ```
-Register Repo ──> Clone ──> Scan Files ──> Extract Structure
-                                                  │
-                                    ┌─────────────┼─────────────┐
-                                    ▼             ▼             ▼
-                              Generate Page  Generate Page  Generate Page
-                              (Gen + Critic) (Gen + Critic) (Gen + Critic)
-                                    │             │             │
-                                    └─────────────┼─────────────┘
-                                                  │
-                                    ┌─────────────┴─────────────┐
-                                    ▼                           ▼
-                              Distill README          Generate Embeddings
-                              (Gen + Critic)           (chunk + vectorize)
-                                    │                           │
-                                    └─────────────┬─────────────┘
-                                                  ▼
-                                    Close Stale PRs ──> Create PR
-                                                  │
-                                    Archive Sessions ──> Cleanup
+
+Each agent's Generator + Critic loop:
+
+```mermaid
+flowchart LR
+    G[Generator LLM] -->|produces content| C[Critic LLM]
+    C -->|score >= threshold| Pass[Accept Best Attempt]
+    C -->|score < threshold| G
+    C -.->|max attempts reached| Pass
 ```
 
 After initial generation, subsequent runs auto-detect changes via the provider's compare API and regenerate only affected pages (incremental mode).
@@ -386,21 +393,65 @@ src/
 
 ### Data Model
 
-```
-Repository (1:N) ──> Job
-    │
-    └── (1:N) ──> WikiStructure (versioned, max 3 per scope)
-                      │
-                      └── (1:N) ──> WikiPage (GIN index on content)
-                                        │
-                                        └── (1:N) ──> PageChunk (HNSW index on embedding)
-```
+```mermaid
+erDiagram
+    Repository ||--o{ Job : triggers
+    Repository ||--o{ WikiStructure : contains
+    WikiStructure ||--o{ WikiPage : contains
+    WikiPage ||--o{ PageChunk : splits_into
 
-- **Repository**: Registered Git repos with provider, branch mappings, and access credentials
-- **Job**: Tracks generation runs (PENDING → RUNNING → COMPLETED/FAILED/CANCELLED)
-- **WikiStructure**: Versioned documentation structure per (repo, branch, scope), max 3 versions retained
-- **WikiPage**: Individual documentation pages with markdown content and quality scores
-- **PageChunk**: 512-token content chunks with 3072-dimensional vector embeddings
+    Repository {
+        uuid id PK
+        string provider "github | bitbucket"
+        string url UK
+        string org
+        string name
+        jsonb branch_mappings
+        string public_branch
+    }
+
+    Job {
+        uuid id PK
+        uuid repository_id FK
+        string status "PENDING | RUNNING | COMPLETED | FAILED | CANCELLED"
+        string mode "full | incremental"
+        string branch
+        string commit_sha
+        jsonb quality_report
+        jsonb token_usage
+        string callback_url
+        string pull_request_url
+    }
+
+    WikiStructure {
+        uuid id PK
+        uuid repository_id FK
+        string branch
+        string scope_path
+        int version "max 3 retained"
+        jsonb sections
+        string commit_sha
+    }
+
+    WikiPage {
+        uuid id PK
+        uuid wiki_structure_id FK
+        string page_key UK
+        string title
+        text content "GIN index"
+        float quality_score
+        jsonb source_files
+    }
+
+    PageChunk {
+        uuid id PK
+        uuid wiki_page_id FK
+        int chunk_index
+        text content
+        vector content_embedding "HNSW index, 3072 dim"
+        int token_count "512 target"
+    }
+```
 
 ### Error Hierarchy
 
@@ -414,11 +465,42 @@ Repository (1:N) ──> Job
 
 Prefect 3 orchestrates all workflows. Each Prefect task is an atomic database transaction.
 
-**Full generation flow**: clone → scan → discover configs → process scopes (parallel) → close stale PRs → create PR → aggregate metrics → archive sessions → cleanup
+**Full generation flow**:
 
-**Incremental update flow**: resolve baseline SHA → compare commits via provider API → detect structural changes → regenerate affected pages only → duplicate unchanged pages to new version → create PR
+```mermaid
+flowchart LR
+    A[Clone] --> B[Scan]
+    B --> C[Discover Configs]
+    C --> D[Process Scopes<br><i>parallel</i>]
+    D --> E[Close Stale PRs]
+    E --> F[Create PR]
+    F --> G[Aggregate Metrics]
+    G --> H[Archive Sessions]
+    H --> I[Cleanup]
+```
 
-**Scope processing flow**: scan file tree → extract structure → generate pages → distill README + generate embeddings (parallel)
+**Incremental update flow**:
+
+```mermaid
+flowchart LR
+    A[Resolve<br>Baseline SHA] --> B[Compare Commits<br><i>provider API</i>]
+    B --> C{Structural<br>Changes?}
+    C -->|yes| D[Re-extract<br>Structure]
+    C -->|no| E[Reuse<br>Structure]
+    D & E --> F[Regenerate<br>Affected Pages]
+    F --> G[Duplicate<br>Unchanged Pages]
+    G --> H[Create PR]
+```
+
+**Scope processing flow**:
+
+```mermaid
+flowchart LR
+    A[Scan File Tree] --> B[Extract Structure]
+    B --> C[Generate Pages]
+    C --> D[Distill README]
+    C --> E[Generate Embeddings]
+```
 
 ### Work Pools
 
