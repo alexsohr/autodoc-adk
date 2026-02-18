@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query
 from fastapi.responses import JSONResponse
 
 from src.api.dependencies import get_job_repo, get_repository_repo, get_wiki_repo
@@ -33,11 +34,17 @@ async def _submit_flow(
     branch: str,
     dry_run: bool,
 ) -> None:
-    """Submit the appropriate Prefect flow run based on job mode."""
+    """Submit the appropriate Prefect flow run as a detached asyncio task.
+
+    Uses asyncio.create_task() instead of FastAPI BackgroundTasks so the
+    flow runs independently of the ASGI request lifecycle.  BackgroundTasks
+    execute inside the request scope, so uvicorn cancels them when the HTTP
+    client disconnects after receiving the response — killing the flow.
+    """
     if mode == "incremental":
         from src.flows.incremental_update import incremental_update_flow
 
-        await incremental_update_flow(
+        coro = incremental_update_flow(
             repository_id=repository_id,
             job_id=job_id,
             branch=branch,
@@ -46,23 +53,96 @@ async def _submit_flow(
     else:
         from src.flows.full_generation import full_generation_flow
 
-        await full_generation_flow(
+        coro = full_generation_flow(
             repository_id=repository_id,
             job_id=job_id,
             branch=branch,
             dry_run=dry_run,
         )
 
+    task = asyncio.create_task(coro, name=f"flow-{mode}-{job_id}")
+    task.add_done_callback(_flow_task_done)
+
+
+def _flow_task_done(task: asyncio.Task) -> None:
+    """Log unhandled exceptions from detached flow tasks."""
+    if task.cancelled():
+        logger.warning("Flow task %s was cancelled", task.get_name())
+    elif exc := task.exception():
+        logger.error("Flow task %s failed: %s", task.get_name(), exc)
+
 
 @router.post(
     "/jobs",
     response_model=JobResponse,
     status_code=201,
-    responses={200: {"model": JobResponse}},
+    summary="Create a documentation job",
+    description=(
+        "Create a documentation generation job. Auto-determines full vs "
+        "incremental mode unless force=true. Returns 200 with existing job "
+        "if an active one already exists (idempotency), or 201 with the "
+        "newly created job."
+    ),
+    responses={
+        200: {
+            "model": JobResponse,
+            "description": "An active job already exists (idempotency).",
+        },
+        404: {
+            "description": "Repository not found.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Repository not found"},
+                },
+            },
+        },
+        422: {
+            "description": "Branch not in repository branch_mappings.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Branch 'develop' is not in repository branch_mappings",
+                    },
+                },
+            },
+        },
+    },
 )
 async def create_job(
-    body: CreateJobRequest,
-    background_tasks: BackgroundTasks,
+    body: CreateJobRequest = Body(
+        ...,
+        openapi_examples={
+            "full_generation": {
+                "summary": "Force full generation",
+                "description": (
+                    "Force a full documentation generation for a repository on "
+                    "the main branch, with a webhook callback."
+                ),
+                "value": {
+                    "repository_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                    "branch": "main",
+                    "force": True,
+                    "dry_run": False,
+                    "callback_url": "https://example.com/webhooks/autodoc",
+                },
+            },
+            "incremental_dry_run": {
+                "summary": "Incremental dry run",
+                "description": (
+                    "Let the system auto-determine the mode (incremental if a "
+                    "prior structure exists) and perform a dry run without "
+                    "committing changes."
+                ),
+                "value": {
+                    "repository_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                    "branch": None,
+                    "force": False,
+                    "dry_run": True,
+                    "callback_url": None,
+                },
+            },
+        },
+    ),
     job_repo: JobRepo = Depends(get_job_repo),
     repository_repo: RepositoryRepo = Depends(get_repository_repo),
     wiki_repo: WikiRepo = Depends(get_wiki_repo),
@@ -126,9 +206,8 @@ async def create_job(
         callback_url=body.callback_url,
     )
 
-    # 7. Submit flow as background task
-    background_tasks.add_task(
-        _submit_flow,
+    # 7. Submit flow as detached asyncio task
+    await _submit_flow(
         mode=mode,
         repository_id=body.repository_id,
         job_id=job.id,
@@ -150,13 +229,86 @@ async def create_job(
 @router.get(
     "/jobs",
     response_model=PaginatedJobResponse,
+    summary="List jobs",
+    description=(
+        "List documentation jobs with optional filters and cursor-based "
+        "pagination. Pass `cursor` from the previous response's "
+        "`next_cursor` field to retrieve subsequent pages."
+    ),
 )
 async def list_jobs(
-    repository_id: UUID | None = Query(None),
-    status: JobStatus | None = Query(None),
-    branch: str | None = Query(None),
-    cursor: UUID | None = Query(None),
-    limit: int = Query(20, ge=1, le=100),
+    repository_id: UUID | None = Query(
+        None,
+        description="Filter jobs by repository UUID.",
+        openapi_examples={
+            "all": {
+                "summary": "All repositories",
+                "value": None,
+            },
+            "filter": {
+                "summary": "Filter by repository",
+                "value": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            },
+        },
+    ),
+    status: JobStatus | None = Query(
+        None,
+        description="Filter jobs by status.",
+        openapi_examples={
+            "all": {
+                "summary": "All statuses",
+                "value": None,
+            },
+            "failed_only": {
+                "summary": "Failed jobs only",
+                "value": "FAILED",
+            },
+        },
+    ),
+    branch: str | None = Query(
+        None,
+        description="Filter jobs by branch name.",
+        openapi_examples={
+            "all": {
+                "summary": "All branches",
+                "value": None,
+            },
+            "main_only": {
+                "summary": "Main branch only",
+                "value": "main",
+            },
+        },
+    ),
+    cursor: UUID | None = Query(
+        None,
+        description="Cursor for pagination. Use next_cursor from the previous response.",
+        openapi_examples={
+            "first_page": {
+                "summary": "First page",
+                "value": None,
+            },
+            "next_page": {
+                "summary": "Next page",
+                "value": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+            },
+        },
+    ),
+    limit: int = Query(
+        20,
+        ge=1,
+        le=100,
+        description="Maximum number of results per page.",
+        openapi_examples={
+            "default": {
+                "summary": "Default page size",
+                "value": 20,
+            },
+            "small": {
+                "summary": "Small page",
+                "value": 5,
+            },
+        },
+    ),
     job_repo: JobRepo = Depends(get_job_repo),
 ) -> PaginatedJobResponse:
     """List jobs with optional filters and cursor-based pagination."""
@@ -178,9 +330,30 @@ async def list_jobs(
 @router.get(
     "/jobs/{job_id}",
     response_model=JobResponse,
+    summary="Get a job",
+    description="Return a single documentation job by its unique identifier.",
+    responses={
+        404: {
+            "description": "Job not found.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Job not found"},
+                },
+            },
+        },
+    },
 )
 async def get_job(
-    job_id: UUID,
+    job_id: UUID = Path(
+        ...,
+        description="Unique identifier of the job.",
+        openapi_examples={
+            "example": {
+                "summary": "Job UUID",
+                "value": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+            },
+        },
+    ),
     job_repo: JobRepo = Depends(get_job_repo),
 ) -> JobResponse:
     """Return a single job by ID."""
@@ -193,9 +366,43 @@ async def get_job(
 @router.get(
     "/jobs/{job_id}/structure",
     response_model=WikiStructureResponse,
+    summary="Get job wiki structure",
+    description=(
+        "Return the latest wiki structure for the job's repository and branch. "
+        "Returns 404 if the job does not exist or no structure has been "
+        "generated yet."
+    ),
+    responses={
+        404: {
+            "description": "Job or structure not found.",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "job_not_found": {
+                            "summary": "Job not found",
+                            "value": {"detail": "Job not found"},
+                        },
+                        "structure_not_found": {
+                            "summary": "Structure not found",
+                            "value": {"detail": "No structure found for this job"},
+                        },
+                    },
+                },
+            },
+        },
+    },
 )
 async def get_job_structure(
-    job_id: UUID,
+    job_id: UUID = Path(
+        ...,
+        description="Unique identifier of the job.",
+        openapi_examples={
+            "example": {
+                "summary": "Job UUID",
+                "value": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+            },
+        },
+    ),
     job_repo: JobRepo = Depends(get_job_repo),
     wiki_repo: WikiRepo = Depends(get_wiki_repo),
 ) -> WikiStructureResponse:
@@ -219,9 +426,47 @@ async def get_job_structure(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/jobs/{job_id}/cancel", response_model=JobResponse)
+@router.post(
+    "/jobs/{job_id}/cancel",
+    response_model=JobResponse,
+    summary="Cancel a job",
+    description=(
+        "Cancel a PENDING or RUNNING job. For RUNNING jobs with a Prefect "
+        "flow run, cancellation is propagated via the Prefect API. "
+        "Returns 409 for non-cancellable states."
+    ),
+    responses={
+        404: {
+            "description": "Job not found.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Job not found"},
+                },
+            },
+        },
+        409: {
+            "description": "Job cannot be cancelled in its current state.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Job is in COMPLETED state and cannot be cancelled",
+                    },
+                },
+            },
+        },
+    },
+)
 async def cancel_job(
-    job_id: UUID,
+    job_id: UUID = Path(
+        ...,
+        description="Unique identifier of the job.",
+        openapi_examples={
+            "example": {
+                "summary": "Job UUID",
+                "value": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+            },
+        },
+    ),
     job_repo: JobRepo = Depends(get_job_repo),
 ) -> JobResponse:
     """Cancel a PENDING or RUNNING job.
@@ -273,10 +518,44 @@ async def cancel_job(
 @router.post(
     "/jobs/{job_id}/retry",
     response_model=JobResponse,
+    summary="Retry a failed job",
+    description=(
+        "Retry a FAILED job by resetting it to PENDING and submitting a new "
+        "Prefect flow run. The mode is re-determined based on current state. "
+        "Returns 409 for non-FAILED states."
+    ),
+    responses={
+        404: {
+            "description": "Job not found.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Job not found"},
+                },
+            },
+        },
+        409: {
+            "description": "Only FAILED jobs can be retried.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Only FAILED jobs can be retried. Current status: COMPLETED",
+                    },
+                },
+            },
+        },
+    },
 )
 async def retry_job(
-    job_id: UUID,
-    background_tasks: BackgroundTasks,
+    job_id: UUID = Path(
+        ...,
+        description="Unique identifier of the job.",
+        openapi_examples={
+            "example": {
+                "summary": "Job UUID",
+                "value": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+            },
+        },
+    ),
     job_repo: JobRepo = Depends(get_job_repo),
     repository_repo: RepositoryRepo = Depends(get_repository_repo),
     wiki_repo: WikiRepo = Depends(get_wiki_repo),
@@ -316,9 +595,8 @@ async def retry_job(
         )
         mode = "full" if structure is None else "incremental"
 
-    # Re-submit flow
-    background_tasks.add_task(
-        _submit_flow,
+    # Re-submit flow as detached asyncio task
+    await _submit_flow(
         mode=mode,
         repository_id=updated.repository_id,
         job_id=updated.id,
@@ -335,9 +613,37 @@ async def retry_job(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/jobs/{job_id}/tasks", response_model=list[TaskState])
+@router.get(
+    "/jobs/{job_id}/tasks",
+    response_model=list[TaskState],
+    summary="Get job task states",
+    description=(
+        "Get Prefect task states for a job's flow run. Returns an empty "
+        "list if the job has no associated Prefect flow run or if the "
+        "Prefect API is unavailable."
+    ),
+    responses={
+        404: {
+            "description": "Job not found.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Job not found"},
+                },
+            },
+        },
+    },
+)
 async def get_job_tasks(
-    job_id: UUID,
+    job_id: UUID = Path(
+        ...,
+        description="Unique identifier of the job.",
+        openapi_examples={
+            "example": {
+                "summary": "Job UUID",
+                "value": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+            },
+        },
+    ),
     job_repo: JobRepo = Depends(get_job_repo),
 ) -> list[TaskState]:
     """Get Prefect task states for a job's flow run."""
@@ -384,9 +690,37 @@ async def get_job_tasks(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/jobs/{job_id}/logs", response_model=list[LogEntry])
+@router.get(
+    "/jobs/{job_id}/logs",
+    response_model=list[LogEntry],
+    summary="Get job logs",
+    description=(
+        "Get Prefect flow run logs for a job. Returns an empty list if "
+        "the job has no associated Prefect flow run or if the Prefect API "
+        "is unavailable."
+    ),
+    responses={
+        404: {
+            "description": "Job not found.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Job not found"},
+                },
+            },
+        },
+    },
+)
 async def get_job_logs(
-    job_id: UUID,
+    job_id: UUID = Path(
+        ...,
+        description="Unique identifier of the job.",
+        openapi_examples={
+            "example": {
+                "summary": "Job UUID",
+                "value": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+            },
+        },
+    ),
     job_repo: JobRepo = Depends(get_job_repo),
 ) -> list[LogEntry]:
     """Get Prefect flow run logs for a job."""

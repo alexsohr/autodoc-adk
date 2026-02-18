@@ -5,17 +5,14 @@ import uuid
 
 from prefect import task
 
-from src.agents.common.agent_result import AgentResult
 from src.agents.page_generator import (
-    GeneratedPage,
     PageGenerator,
     PageGeneratorInput,
 )
-from src.agents.structure_extractor.schemas import PageSpec, SectionSpec, WikiStructureSpec
+from src.agents.structure_extractor.schemas import PageSpec, SectionSpec
 from src.config.settings import get_settings
 from src.database.models.wiki_page import WikiPage
-from src.database.repos.wiki_repo import WikiRepo
-from src.services.config_loader import AutodocConfig
+from src.services.config_loader import autodoc_config_from_dict
 
 logger = logging.getLogger(__name__)
 
@@ -29,42 +26,59 @@ def _collect_page_specs(sections: list[SectionSpec]) -> list[PageSpec]:
     return pages
 
 
+def _reconstruct_page_specs(sections_json: list[dict]) -> list[PageSpec]:
+    """Reconstruct PageSpec list from sections JSONB."""
+    specs: list[PageSpec] = []
+    for section in sections_json:
+        for page in section.get("pages", []):
+            specs.append(
+                PageSpec(
+                    page_key=page["page_key"],
+                    title=page["title"],
+                    description=page.get("description", ""),
+                    importance=page.get("importance", "medium"),
+                    page_type=page.get("page_type", "overview"),
+                    source_files=page.get("source_files", []),
+                    related_pages=page.get("related_pages", []),
+                )
+            )
+        for sub in section.get("subsections", []):
+            specs.extend(_reconstruct_page_specs([sub]))
+    return specs
+
+
 @task(name="generate_pages", timeout_seconds=1800)
 async def generate_pages(
     *,
     job_id: uuid.UUID,
     wiki_structure_id: uuid.UUID,
-    structure_spec: WikiStructureSpec,
+    structure_sections_json: list[dict],
+    structure_title: str,
+    structure_description: str,
     repo_path: str,
-    config: AutodocConfig,
-    wiki_repo: WikiRepo,
-) -> list[AgentResult[GeneratedPage]]:
+    config_dict: dict,
+) -> list[dict]:
     """Generate wiki pages for all page specs in the structure.
 
-    Iterates page specs from WikiStructureSpec, runs PageGenerator agent
+    Iterates page specs from sections JSON, runs PageGenerator agent
     for each page. Each WikiPage is saved atomically (partial results
     persist on failure).
 
-    Args:
-        job_id: Job UUID (used as session user_id).
-        wiki_structure_id: WikiStructure UUID to link pages to.
-        structure_spec: The wiki structure spec with page definitions.
-        repo_path: Path to cloned repository.
-        config: AutodocConfig for this scope.
-        wiki_repo: WikiRepo instance for DB operations.
+    All parameters are JSON-serializable for cross-process execution.
 
     Returns:
-        List of AgentResults, one per page.
+        List of dicts with serializable page results.
     """
     settings = get_settings()
+    config = autodoc_config_from_dict(config_dict)
 
     db_url = settings.DATABASE_URL.replace("+asyncpg", "")
     from google.adk.sessions import DatabaseSessionService
 
     session_service = DatabaseSessionService(db_url=db_url)
 
-    page_specs = _collect_page_specs(structure_spec.sections)
-    results: list[AgentResult[GeneratedPage]] = []
+    page_specs = _reconstruct_page_specs(structure_sections_json)
+    results: list[dict] = []
 
     for page_spec in page_specs:
         session_id = f"page-{job_id}-{page_spec.page_key}-{uuid.uuid4().hex[:8]}"
@@ -92,21 +106,29 @@ async def generate_pages(
                 session_id=session_id,
             )
 
-            # Save page to DB atomically
+            # Save page to DB atomically with own session
             if result.output is not None:
-                wiki_page = WikiPage(
-                    wiki_structure_id=wiki_structure_id,
-                    page_key=result.output.page_key,
-                    title=result.output.title,
-                    description=page_spec.description,
-                    importance=page_spec.importance,
-                    page_type=page_spec.page_type,
-                    source_files=page_spec.source_files,
-                    related_pages=page_spec.related_pages,
-                    content=result.output.content,
-                    quality_score=result.final_score,
-                )
-                await wiki_repo.create_pages([wiki_page])
+                from src.database.engine import get_session_factory
+                from src.database.repos.wiki_repo import WikiRepo
+
+                session_factory = get_session_factory()
+                async with session_factory() as session:
+                    wiki_repo = WikiRepo(session)
+                    wiki_page = WikiPage(
+                        wiki_structure_id=wiki_structure_id,
+                        page_key=result.output.page_key,
+                        title=result.output.title,
+                        description=page_spec.description,
+                        importance=page_spec.importance,
+                        page_type=page_spec.page_type,
+                        source_files=page_spec.source_files,
+                        related_pages=page_spec.related_pages,
+                        content=result.output.content,
+                        quality_score=result.final_score,
+                    )
+                    await wiki_repo.create_pages([wiki_page])
+                    await session.commit()
+
                 logger.info(
                     "Generated page '%s' (score=%.2f, attempts=%d)",
                     page_spec.page_key,
@@ -114,7 +136,19 @@ async def generate_pages(
                     result.attempts,
                 )
 
-            results.append(result)
+            results.append({
+                "page_key": result.output.page_key if result.output else page_spec.page_key,
+                "final_score": result.final_score,
+                "passed_quality_gate": result.passed_quality_gate,
+                "below_minimum_floor": result.below_minimum_floor,
+                "attempts": result.attempts,
+                "token_usage": {
+                    "input_tokens": result.token_usage.input_tokens,
+                    "output_tokens": result.token_usage.output_tokens,
+                    "total_tokens": result.token_usage.total_tokens,
+                    "calls": result.token_usage.calls,
+                },
+            })
         except Exception:
             logger.exception("Failed to generate page '%s'", page_spec.page_key)
             # Continue with remaining pages — partial results persist

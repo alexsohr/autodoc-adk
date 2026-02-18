@@ -5,16 +5,12 @@ import uuid
 
 from prefect import task
 
-from src.agents.common.agent_result import AgentResult
 from src.agents.readme_distiller import (
     ReadmeDistiller,
     ReadmeDistillerInput,
-    ReadmeOutput,
 )
-from src.agents.structure_extractor.schemas import WikiStructureSpec
 from src.config.settings import get_settings
-from src.database.models.wiki_page import WikiPage
-from src.services.config_loader import AutodocConfig
+from src.services.config_loader import autodoc_config_from_dict
 
 logger = logging.getLogger(__name__)
 
@@ -23,25 +19,28 @@ logger = logging.getLogger(__name__)
 async def distill_readme(
     *,
     job_id: uuid.UUID,
-    structure_spec: WikiStructureSpec,
-    wiki_pages: list[WikiPage],
-    config: AutodocConfig,
-) -> AgentResult[ReadmeOutput]:
+    structure_title: str,
+    structure_description: str,
+    page_summaries: list[dict],
+    config_dict: dict,
+) -> dict:
     """Distill wiki pages into a README.
 
-    Loads generated wiki pages into session state, runs ReadmeDistiller
-    agent, returns AgentResult[ReadmeOutput] with README markdown.
+    Accepts page summaries as dicts and config as a serializable dict
+    for cross-process execution.
 
     Args:
         job_id: Job UUID (used as session user_id).
-        structure_spec: The wiki structure spec (for project title/description).
-        wiki_pages: List of generated WikiPage ORM objects.
-        config: AutodocConfig with readme settings.
+        structure_title: The wiki structure title.
+        structure_description: The wiki structure description.
+        page_summaries: List of dicts with keys: page_key, title, description, content.
+        config_dict: Serialized AutodocConfig dict.
 
     Returns:
-        AgentResult[ReadmeOutput] with generated README content.
+        Dict with README content and quality metadata.
     """
     settings = get_settings()
+    config = autodoc_config_from_dict(config_dict)
 
     db_url = settings.DATABASE_URL.replace("+asyncpg", "")
     from google.adk.sessions import DatabaseSessionService
@@ -50,22 +49,11 @@ async def distill_readme(
 
     session_id = f"readme-{job_id}-{uuid.uuid4().hex[:8]}"
 
-    # Prepare wiki page data for the agent
-    pages_data = [
-        {
-            "page_key": page.page_key,
-            "title": page.title,
-            "description": page.description,
-            "content": page.content,
-        }
-        for page in wiki_pages
-    ]
-
     agent = ReadmeDistiller()
     input_data = ReadmeDistillerInput(
-        wiki_pages=pages_data,
-        project_title=structure_spec.title,
-        project_description=structure_spec.description,
+        wiki_pages=page_summaries,
+        project_title=structure_title,
+        project_description=structure_description,
         custom_instructions=config.custom_instructions,
         max_length=config.readme.max_length,
         include_toc=config.readme.include_toc,
@@ -88,4 +76,16 @@ async def distill_readme(
         len(result.output.content) if result.output else 0,
     )
 
-    return result
+    return {
+        "final_score": result.final_score,
+        "passed_quality_gate": result.passed_quality_gate,
+        "below_minimum_floor": result.below_minimum_floor,
+        "attempts": result.attempts,
+        "content": result.output.content if result.output else "",
+        "token_usage": {
+            "input_tokens": result.token_usage.input_tokens,
+            "output_tokens": result.token_usage.output_tokens,
+            "total_tokens": result.token_usage.total_tokens,
+            "calls": result.token_usage.calls,
+        },
+    }

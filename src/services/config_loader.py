@@ -283,3 +283,25 @@ def apply_scope_overlap_exclusions(
                 )
 
     return configs
+
+
+def autodoc_config_from_dict(data: dict) -> AutodocConfig:
+    """Reconstruct an AutodocConfig from a JSON-serializable dict.
+
+    Used by Prefect tasks that receive config as serialized parameters
+    rather than direct dataclass instances.
+    """
+    style_data = data.get("style", {})
+    readme_data = data.get("readme", {})
+    pr_data = data.get("pull_request", {})
+
+    return AutodocConfig(
+        scope_path=data.get("scope_path", "."),
+        version=data.get("version", "1"),
+        include=data.get("include", []),
+        exclude=data.get("exclude", []),
+        style=StyleConfig(**style_data) if style_data else StyleConfig(),
+        custom_instructions=data.get("custom_instructions", ""),
+        readme=ReadmeConfig(**readme_data) if readme_data else ReadmeConfig(),
+        pull_request=PullRequestConfig(**pr_data) if pr_data else PullRequestConfig(),
+    )

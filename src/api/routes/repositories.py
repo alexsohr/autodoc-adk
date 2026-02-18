@@ -3,7 +3,7 @@ from __future__ import annotations
 from urllib.parse import urlparse
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Response
 from sqlalchemy.exc import IntegrityError
 
 from src.api.dependencies import get_repository_repo
@@ -45,9 +45,64 @@ def _parse_org_name(url: str, provider: str) -> tuple[str, str]:
     "/repositories",
     response_model=RepositoryResponse,
     status_code=201,
+    summary="Register a repository",
+    description=(
+        "Register a new repository for documentation generation. "
+        "The URL must match the provider host (github.com for GitHub, "
+        "bitbucket.org for Bitbucket). The public_branch must be one of "
+        "the keys in branch_mappings."
+    ),
+    responses={
+        409: {
+            "description": "Repository URL already registered",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Repository URL already registered"},
+                },
+            },
+        },
+        422: {
+            "description": "Validation error",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "URL host must be github.com for provider 'github'",
+                    },
+                },
+            },
+        },
+    },
 )
 async def register_repository(
-    body: RegisterRepositoryRequest,
+    body: RegisterRepositoryRequest = Body(
+        openapi_examples={
+            "github_private": {
+                "summary": "GitHub private repository",
+                "value": {
+                    "url": "https://github.com/acme-corp/backend-api",
+                    "provider": "github",
+                    "branch_mappings": {
+                        "main": "production",
+                        "develop": "staging",
+                    },
+                    "public_branch": "main",
+                    "access_token": "ghp_a1b2c3d4e5f6g7h8i9j0kLmNoPqRsTuVwXyZ",
+                },
+            },
+            "bitbucket_public": {
+                "summary": "Bitbucket public repository",
+                "value": {
+                    "url": "https://bitbucket.org/acme-corp/frontend-app",
+                    "provider": "bitbucket",
+                    "branch_mappings": {
+                        "master": "latest",
+                    },
+                    "public_branch": "master",
+                    "access_token": None,
+                },
+            },
+        },
+    ),
     repo: RepositoryRepo = Depends(get_repository_repo),
 ) -> RepositoryResponse:
     org, name = _parse_org_name(body.url, body.provider)
@@ -71,10 +126,44 @@ async def register_repository(
 @router.get(
     "/repositories",
     response_model=PaginatedRepositoryResponse,
+    summary="List repositories",
+    description=(
+        "Return a paginated list of registered repositories. "
+        "Use cursor-based pagination by passing the next_cursor value "
+        "from the previous response as the cursor parameter."
+    ),
 )
 async def list_repositories(
-    cursor: UUID | None = Query(None),
-    limit: int = Query(20, ge=1, le=100),
+    cursor: UUID | None = Query(
+        None,
+        description="UUID of the last item from the previous page. Omit for the first page.",
+        openapi_examples={
+            "first_page": {
+                "summary": "First page (no cursor)",
+                "value": None,
+            },
+            "next_page": {
+                "summary": "Fetch next page",
+                "value": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            },
+        },
+    ),
+    limit: int = Query(
+        20,
+        ge=1,
+        le=100,
+        description="Maximum number of repositories to return per page.",
+        openapi_examples={
+            "default": {
+                "summary": "Default page size",
+                "value": 20,
+            },
+            "small": {
+                "summary": "Small page",
+                "value": 5,
+            },
+        },
+    ),
     repo: RepositoryRepo = Depends(get_repository_repo),
 ) -> PaginatedRepositoryResponse:
     rows = await repo.list(cursor=cursor, limit=limit)
@@ -89,9 +178,29 @@ async def list_repositories(
 @router.get(
     "/repositories/{repository_id}",
     response_model=RepositoryResponse,
+    summary="Get a repository",
+    description="Retrieve details of a single registered repository by its unique identifier.",
+    responses={
+        404: {
+            "description": "Repository not found",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Repository not found"},
+                },
+            },
+        },
+    },
 )
 async def get_repository(
-    repository_id: UUID,
+    repository_id: UUID = Path(
+        description="Unique identifier of the repository.",
+        openapi_examples={
+            "example": {
+                "summary": "Repository UUID",
+                "value": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            },
+        },
+    ),
     repo: RepositoryRepo = Depends(get_repository_repo),
 ) -> RepositoryResponse:
     row = await repo.get_by_id(repository_id)
@@ -103,10 +212,64 @@ async def get_repository(
 @router.patch(
     "/repositories/{repository_id}",
     response_model=RepositoryResponse,
+    summary="Update a repository",
+    description=(
+        "Partially update a registered repository. Only the fields included "
+        "in the request body will be modified. If public_branch is updated, "
+        "it must be one of the keys in the current or updated branch_mappings."
+    ),
+    responses={
+        404: {
+            "description": "Repository not found",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Repository not found"},
+                },
+            },
+        },
+        422: {
+            "description": "Validation error",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "public_branch 'staging' must be a key in branch_mappings",
+                    },
+                },
+            },
+        },
+    },
 )
 async def update_repository(
-    repository_id: UUID,
-    body: UpdateRepositoryRequest,
+    body: UpdateRepositoryRequest = Body(
+        openapi_examples={
+            "add_branch": {
+                "summary": "Add a branch mapping",
+                "value": {
+                    "branch_mappings": {
+                        "main": "production",
+                        "develop": "staging",
+                        "release/v2": "v2-preview",
+                    },
+                    "public_branch": "main",
+                },
+            },
+            "rotate_token": {
+                "summary": "Rotate access token",
+                "value": {
+                    "access_token": "ghp_NewRotatedToken9x8y7z6w5v4u3t2s1r0q",
+                },
+            },
+        },
+    ),
+    repository_id: UUID = Path(
+        description="Unique identifier of the repository.",
+        openapi_examples={
+            "example": {
+                "summary": "Repository UUID",
+                "value": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            },
+        },
+    ),
     repo: RepositoryRepo = Depends(get_repository_repo),
 ) -> RepositoryResponse:
     updates = body.model_dump(exclude_unset=True)
@@ -138,9 +301,32 @@ async def update_repository(
 @router.delete(
     "/repositories/{repository_id}",
     status_code=204,
+    summary="Delete a repository",
+    description=(
+        "Delete a registered repository and all associated data "
+        "(wiki structures, pages, chunks). This action is irreversible."
+    ),
+    responses={
+        404: {
+            "description": "Repository not found",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Repository not found"},
+                },
+            },
+        },
+    },
 )
 async def delete_repository(
-    repository_id: UUID,
+    repository_id: UUID = Path(
+        description="Unique identifier of the repository.",
+        openapi_examples={
+            "example": {
+                "summary": "Repository UUID",
+                "value": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            },
+        },
+    ),
     repo: RepositoryRepo = Depends(get_repository_repo),
 ) -> Response:
     deleted = await repo.delete(repository_id)

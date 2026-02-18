@@ -34,7 +34,7 @@ migrate:
 # ── Application ──
 
 api:
-	cd .. && uv run uvicorn src.main:app --host 0.0.0.0 --port 8080 --reload
+	cd .. && uv run uvicorn src.main:app --host 0.0.0.0 --port 8080 --reload --loop asyncio
 
 worker:
 	cd .. && uv run prefect worker start --pool local-dev
