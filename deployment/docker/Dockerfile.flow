@@ -1,0 +1,137 @@
+# =============================================================================
+# Dockerfile.flow — Flow Runner (Heavy) Image
+# =============================================================================
+# Contains ALL application code + AI dependencies (google-adk, litellm, prefect,
+# etc.) baked in. Pulled by the Prefect worker to run as K8s jobs or local
+# processes. Built by CI on merge to main, tagged with commit SHA.
+#
+# Build context: project root (../../ from this file)
+# Build command:
+#   docker build -f deployment/docker/Dockerfile.flow \
+#     --build-arg APP_COMMIT_SHA=$(git rev-parse HEAD) \
+#     -t autodoc-flow-runner:$(git rev-parse --short HEAD) .
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Stage 1: Build Python dependencies
+# ---------------------------------------------------------------------------
+FROM python:3.11-slim AS builder
+
+# Build tools required by native Python packages (asyncpg, pgvector, etc.)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv for fast, reproducible dependency resolution
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+WORKDIR /build
+
+# Copy dependency manifests first for optimal layer caching.
+# Changes to application code will not invalidate the dependency layer.
+COPY pyproject.toml uv.lock ./
+
+# Install all production dependencies into a virtual environment.
+# --frozen: respect the lockfile exactly (no resolution, no network lookups)
+# --no-dev: skip dev dependencies (pytest, ruff, etc.)
+# --no-install-project: don't install the project itself yet
+RUN uv sync --frozen --no-dev --no-install-project
+
+# ---------------------------------------------------------------------------
+# Stage 2: Runtime image
+# ---------------------------------------------------------------------------
+FROM python:3.11-slim
+
+LABEL maintainer="autodoc-adk"
+LABEL component="flow-runner"
+LABEL description="Heavy flow runner image with all AI libraries and flow code baked in"
+
+# ── System dependencies ────────────────────────────────────────────────────
+# git:             Clone target repositories during documentation generation
+# libpq5:          PostgreSQL client library (asyncpg runtime dependency)
+# curl:            Health probes, debugging, NodeSource setup
+# ca-certificates: TLS for git clones, API calls, npm registry
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        git \
+        libpq5 \
+        curl \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Node.js 18 (LTS) ──────────────────────────────────────────────────────
+# Required for MCP filesystem tools invoked by agents via:
+#   npx -y @modelcontextprotocol/server-filesystem <allowed_dirs>
+RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs && \
+    rm -rf /var/lib/apt/lists/* && \
+    node --version && npm --version
+
+# ── uv (available at runtime for ad-hoc needs) ────────────────────────────
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# ── Non-root user ─────────────────────────────────────────────────────────
+RUN groupadd --gid 1000 autodoc && \
+    useradd --uid 1000 --gid autodoc --create-home --shell /bin/bash autodoc
+
+# ── Python virtual environment from builder stage ─────────────────────────
+COPY --from=builder /build/.venv /app/.venv
+
+# ── Application code ──────────────────────────────────────────────────────
+WORKDIR /app
+
+# Dependency manifests (needed for `pip install --no-deps -e .`)
+COPY pyproject.toml uv.lock ./
+
+# Source code — this is where flows, agents, models, and config live
+COPY src/ ./src/
+
+# Prefect deployment definitions
+COPY prefect.yaml ./
+
+# Alembic configuration (migrations live in src/database/migrations/, already copied with src/)
+COPY alembic.ini ./
+
+# Install the project package into the venv (no dependency resolution,
+# only registers the package so `import src` and entry points work)
+RUN /app/.venv/bin/pip install --no-deps -e .
+
+# ── Build arg: application commit SHA ─────────────────────────────────────
+# Injected by CI via: --build-arg APP_COMMIT_SHA=$(git rev-parse HEAD)
+# Used for prompt/rubric versioning; recorded in jobs.app_commit_sha.
+ARG APP_COMMIT_SHA="unknown"
+ENV APP_COMMIT_SHA=${APP_COMMIT_SHA}
+
+# ── Environment ───────────────────────────────────────────────────────────
+# Put the venv first on PATH so its Python and CLI tools take precedence
+ENV PATH="/app/.venv/bin:${PATH}"
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Default Prefect API URL — overridden by deployment manifests / env config
+ENV PREFECT_API_URL="http://prefect-server:4200/api"
+
+# ── Workspace for repository clones ──────────────────────────────────────
+RUN mkdir -p /tmp/autodoc-workspaces && chown autodoc:autodoc /tmp/autodoc-workspaces
+
+# ── Ownership ─────────────────────────────────────────────────────────────
+RUN chown -R autodoc:autodoc /app
+
+# ── Switch to non-root user ───────────────────────────────────────────────
+USER autodoc
+
+# ── Healthcheck ───────────────────────────────────────────────────────────
+# Flow runner containers are ephemeral K8s jobs. This healthcheck supports
+# local docker-compose development and debugging scenarios.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD python -c "import prefect; print('ok')" || exit 1
+
+# ── Entrypoint ────────────────────────────────────────────────────────────
+# No fixed entrypoint. Prefect infrastructure (K8s job template or process
+# work pool) overrides the command to invoke the specific flow run, e.g.:
+#   python -m prefect.engine
+# Default CMD prints version info for debugging / smoke testing.
+ENTRYPOINT []
+CMD ["python", "--version"]

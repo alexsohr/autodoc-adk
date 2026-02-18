@@ -1,0 +1,72 @@
+# ---------------------------------------------------------------------------
+# Dockerfile.api — Lightweight FastAPI image for the autodoc-adk API service
+# ---------------------------------------------------------------------------
+# Multi-stage build:
+#   1. "builder"  — installs uv, resolves and installs production dependencies
+#   2. "runtime"  — slim final image with only the virtualenv + source code
+# ---------------------------------------------------------------------------
+
+# ===== Stage 1: Builder =====
+FROM python:3.11-slim AS builder
+
+# Prevent Python from writing .pyc files and enable unbuffered stdout/stderr
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Install uv from the official standalone installer (pinned for reproducibility)
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+WORKDIR /build
+
+# Copy dependency manifests first to maximise Docker layer caching.
+# Changes to source code alone will NOT invalidate the dependency layer.
+COPY pyproject.toml uv.lock ./
+
+# Install production dependencies into an isolated virtual environment.
+# --frozen  : use the exact versions from uv.lock (no resolution)
+# --no-dev  : skip [project.optional-dependencies] dev group
+# --no-editable : install the project package as a regular package
+RUN uv venv /build/.venv && \
+    uv sync --frozen --no-dev --no-install-project
+
+# Copy application source code
+COPY src/ ./src/
+
+# Install the project itself (hatchling wheel build) into the same venv
+RUN uv sync --frozen --no-dev --no-editable
+
+
+# ===== Stage 2: Runtime =====
+FROM python:3.11-slim AS runtime
+
+LABEL org.opencontainers.image.title="autodoc-adk-api" \
+      org.opencontainers.image.description="Lightweight FastAPI API server for autodoc-adk" \
+      org.opencontainers.image.source="https://github.com/autodoc-adk/autodoc-adk" \
+      org.opencontainers.image.licenses="MIT"
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    # Make the virtualenv's binaries and packages available
+    PATH="/app/.venv/bin:$PATH"
+
+# Create a non-root user for security
+RUN groupadd --gid 1000 appuser && \
+    useradd --uid 1000 --gid 1000 --shell /bin/false --create-home appuser
+
+WORKDIR /app
+
+# Copy the fully-built virtualenv from the builder stage
+COPY --from=builder /build/.venv /app/.venv
+
+# Copy application source code
+COPY --from=builder /build/src /app/src
+
+# Switch to non-root user
+USER appuser
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+
+ENTRYPOINT ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8080"]
