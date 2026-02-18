@@ -1,6 +1,18 @@
-.PHONY: dev-up dev-down dev-clean migrate api worker deploy-local deploy-flows test lint
+.PHONY: up down clean dev-up dev-down dev-clean migrate api worker deploy-local deploy-flows test test-unit test-integration lint
 
-# ── Infrastructure ──
+# ── Full Stack ──
+
+up:
+	docker compose up --build -d
+	@echo "Full stack running: API on :8080, Prefect on :4200, PostgreSQL on :5432"
+
+down:
+	docker compose down
+
+clean:
+	docker compose down -v
+
+# ── Infrastructure (dev) ──
 
 dev-up:
 	docker compose -f docker/docker-compose.dev.yml up -d
@@ -43,6 +55,12 @@ deploy-flows:
 
 test:
 	cd .. && uv run pytest
+
+test-unit:
+	cd .. && uv run pytest tests/unit/
+
+test-integration:
+	cd .. && uv run pytest tests/integration/ -m integration
 
 lint:
 	cd .. && uv run ruff check src/ tests/

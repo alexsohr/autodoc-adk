@@ -91,12 +91,8 @@ COPY src/ ./src/
 # Prefect deployment definitions
 COPY prefect.yaml ./
 
-# Alembic database migrations
+# Alembic configuration (migrations live in src/database/migrations/, already copied with src/)
 COPY alembic.ini ./
-# NOTE: The alembic/ directory must exist in the build context. If migrations
-# have not been initialised yet, create the directory before building:
-#   alembic init alembic
-COPY alembic/ ./alembic/
 
 # Install the project package into the venv (no dependency resolution,
 # only registers the package so `import src` and entry points work)

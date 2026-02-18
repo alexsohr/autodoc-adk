@@ -21,10 +21,10 @@ cd autodoc-adk
 cp .env.example .env
 
 # Start all services (PostgreSQL, Prefect Server, Worker, API)
-make up
+cd deployment && make up
 
 # Run database migrations
-make migrate
+cd deployment && make migrate
 ```
 
 Services available at:

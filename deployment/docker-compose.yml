@@ -15,14 +15,14 @@
 
 services:
   # ---------------------------------------------------------------------------
-  # PostgreSQL 17 + pgvector
+  # PostgreSQL 18 + pgvector
   # ---------------------------------------------------------------------------
   # Creates two databases on first startup via init-db.sql:
   #   - autodoc  (application data, pgvector extension enabled)
   #   - prefect  (Prefect Server metadata, auto-managed by Prefect)
   # ---------------------------------------------------------------------------
   postgres:
-    image: pgvector/pgvector:pg17
+    image: pgvector/pgvector:pg18
     environment:
       POSTGRES_DB: autodoc
       POSTGRES_USER: autodoc
