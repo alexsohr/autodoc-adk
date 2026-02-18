@@ -12,7 +12,8 @@ from src.agents.structure_extractor import (
     WikiStructureSpec,
 )
 from src.config.settings import get_settings
-from src.services.config_loader import autodoc_config_from_dict
+from src.flows.schemas import StructureTaskResult, TokenUsageResult
+from src.services.config_loader import AutodocConfig
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +33,9 @@ async def extract_structure(
     commit_sha: str,
     file_list: list[str],
     repo_path: str,
-    config_dict: dict,
+    config: AutodocConfig,
     readme_content: str = "",
-) -> dict:
+) -> StructureTaskResult:
     """Run StructureExtractor agent and save result to database.
 
     Creates a DatabaseSessionService session (user_id=job_id), runs
@@ -44,10 +45,9 @@ async def extract_structure(
     All parameters are JSON-serializable for cross-process execution.
 
     Returns:
-        Dict with serializable structure output and quality metadata.
+        StructureTaskResult with structure output and quality metadata.
     """
     settings = get_settings()
-    config = autodoc_config_from_dict(config_dict)
 
     # Create ADK DatabaseSessionService
     db_url = settings.DATABASE_URL.replace("+asyncpg", "")
@@ -106,18 +106,18 @@ async def extract_structure(
             result.attempts,
         )
 
-    return {
-        "final_score": result.final_score,
-        "passed_quality_gate": result.passed_quality_gate,
-        "below_minimum_floor": result.below_minimum_floor,
-        "attempts": result.attempts,
-        "token_usage": {
-            "input_tokens": result.token_usage.input_tokens,
-            "output_tokens": result.token_usage.output_tokens,
-            "total_tokens": result.token_usage.total_tokens,
-            "calls": result.token_usage.calls,
-        },
-        "output_title": result.output.title if result.output else None,
-        "output_description": result.output.description if result.output else None,
-        "sections_json": sections_json,
-    }
+    return StructureTaskResult(
+        final_score=result.final_score,
+        passed_quality_gate=result.passed_quality_gate,
+        below_minimum_floor=result.below_minimum_floor,
+        attempts=result.attempts,
+        token_usage=TokenUsageResult(
+            input_tokens=result.token_usage.input_tokens,
+            output_tokens=result.token_usage.output_tokens,
+            total_tokens=result.token_usage.total_tokens,
+            calls=result.token_usage.calls,
+        ),
+        output_title=result.output.title if result.output else None,
+        output_description=result.output.description if result.output else None,
+        sections_json=sections_json,
+    )
