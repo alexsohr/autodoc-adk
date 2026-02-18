@@ -247,14 +247,14 @@
 
 **Purpose**: Production deployment infrastructure and end-to-end validation
 
-- [ ] T079 [P] Create Dockerfile.api: python:3.11-slim base, uv install production deps only, copy src/, uvicorn entrypoint on port 8080 in deployment/docker/Dockerfile.api
-- [ ] T080 [P] Create Dockerfile.worker: prefecthq/prefect:3-latest base, minimal additional deps, prefect worker start entrypoint in deployment/docker/Dockerfile.worker
-- [ ] T081 [P] Create Dockerfile.flow: python:3.11-slim base, Node.js for filesystem MCP server, all AI dependencies (google-adk, litellm, etc.), flow code baked in, APP_COMMIT_SHA build-arg in deployment/docker/Dockerfile.flow
-- [ ] T082 Create docker-compose.yml full stack: PostgreSQL/pgvector, Prefect Server, Prefect Worker, API service, with healthchecks, dependency ordering (postgres→prefect-server→worker/api), volume mounts, and environment variable configuration in deployment/docker-compose.yml
-- [ ] T083 Validate end-to-end workflow per quickstart.md: register repo → trigger full generation → verify wiki pages stored → search documentation → trigger incremental update → verify selective regeneration → test webhook trigger → validate search queries return within 3 seconds (p95) per SC-004, job management operations within 2 seconds per SC-007
-- [ ] T084 [P] Implement agent isolation tests: verify each agent (StructureExtractor, PageGenerator, ReadmeDistiller) is testable via `adk web` in isolation, producing valid AgentResult output with quality scoring, per constitution Development Workflow requirement in tests/integration/test_agents.py
-- [ ] T085 [P] Implement flow integration tests: verify full_generation_flow and incremental_update_flow via `prefect_test_harness`, covering happy path, dry-run, force flag, and no-changes short-circuit scenarios per constitution Development Workflow requirement in tests/integration/test_flows.py
-- [ ] T086 [P] Implement API integration tests: verify all REST endpoints (repositories CRUD, jobs lifecycle, documents search, webhooks, health) against openapi.yaml contract via pytest with test database per constitution Development Workflow requirement in tests/integration/test_api/ and tests/contract/test_openapi.py
+- [x] T079 [P] Create Dockerfile.api: python:3.11-slim base, uv install production deps only, copy src/, uvicorn entrypoint on port 8080 in deployment/docker/Dockerfile.api
+- [x] T080 [P] Create Dockerfile.worker: prefecthq/prefect:3-latest base, minimal additional deps, prefect worker start entrypoint in deployment/docker/Dockerfile.worker
+- [x] T081 [P] Create Dockerfile.flow: python:3.11-slim base, Node.js for filesystem MCP server, all AI dependencies (google-adk, litellm, etc.), flow code baked in, APP_COMMIT_SHA build-arg in deployment/docker/Dockerfile.flow
+- [x] T082 Create docker-compose.yml full stack: PostgreSQL/pgvector, Prefect Server, Prefect Worker, API service, with healthchecks, dependency ordering (postgres→prefect-server→worker/api), volume mounts, and environment variable configuration in deployment/docker-compose.yml
+- [x] T083 Validate end-to-end workflow per quickstart.md: register repo → trigger full generation → verify wiki pages stored → search documentation → trigger incremental update → verify selective regeneration → test webhook trigger → validate search queries return within 3 seconds (p95) per SC-004, job management operations within 2 seconds per SC-007
+- [x] T084 [P] Implement agent isolation tests: verify each agent (StructureExtractor, PageGenerator, ReadmeDistiller) is testable via `adk web` in isolation, producing valid AgentResult output with quality scoring, per constitution Development Workflow requirement in tests/integration/test_agents.py
+- [x] T085 [P] Implement flow integration tests: verify full_generation_flow and incremental_update_flow via `prefect_test_harness`, covering happy path, dry-run, force flag, and no-changes short-circuit scenarios per constitution Development Workflow requirement in tests/integration/test_flows.py
+- [x] T086 [P] Implement API integration tests: verify all REST endpoints (repositories CRUD, jobs lifecycle, documents search, webhooks, health) against openapi.yaml contract via pytest with test database per constitution Development Workflow requirement in tests/integration/test_api/ and tests/contract/test_openapi.py
 
 ---
 

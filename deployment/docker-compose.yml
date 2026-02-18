@@ -1,0 +1,112 @@
+# =============================================================================
+# docker-compose.yml — Full-stack AutoDoc ADK (production / full local dev)
+# =============================================================================
+# Brings up the complete stack: PostgreSQL (pgvector), Prefect Server,
+# Prefect Worker, and the FastAPI API service.
+#
+# Usage:
+#   cd deployment
+#   docker compose up --build -d
+#
+# Environment variables:
+#   Copy ../.env.example to ../.env and fill in your values.
+#   The API and worker services load variables from ../.env automatically.
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL 17 + pgvector
+  # ---------------------------------------------------------------------------
+  # Creates two databases on first startup via init-db.sql:
+  #   - autodoc  (application data, pgvector extension enabled)
+  #   - prefect  (Prefect Server metadata, auto-managed by Prefect)
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: autodoc
+      POSTGRES_USER: autodoc
+      POSTGRES_PASSWORD: autodoc
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U autodoc -d autodoc"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Prefect Server
+  # ---------------------------------------------------------------------------
+  # Runs the Prefect 3 orchestration server backed by PostgreSQL (not SQLite).
+  # Prefect auto-manages its own schema via Alembic on startup.
+  # ---------------------------------------------------------------------------
+  prefect-server:
+    image: prefecthq/prefect:3-python3.11
+    command: prefect server start --host 0.0.0.0
+    environment:
+      PREFECT_API_DATABASE_CONNECTION_URL: "postgresql+asyncpg://autodoc:autodoc@postgres:5432/prefect"
+      PREFECT_API_DATABASE_MIGRATE_ON_START: "True"
+    ports:
+      - "4200:4200"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:4200/api/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
+  # Prefect Worker
+  # ---------------------------------------------------------------------------
+  # Lightweight worker that polls the local-dev work pool and launches flow
+  # runs. In production this would poll a kubernetes work pool instead.
+  # ---------------------------------------------------------------------------
+  worker:
+    build:
+      context: ..
+      dockerfile: deployment/docker/Dockerfile.worker
+    environment:
+      PREFECT_API_URL: "http://prefect-server:4200/api"
+      PREFECT_WORK_POOL: "local-dev"
+    depends_on:
+      prefect-server:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # FastAPI API Service
+  # ---------------------------------------------------------------------------
+  # The main application API. Connects to both PostgreSQL (for application
+  # data) and Prefect Server (for job orchestration).
+  # ---------------------------------------------------------------------------
+  api:
+    build:
+      context: ..
+      dockerfile: deployment/docker/Dockerfile.api
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://autodoc:autodoc@postgres:5432/autodoc"
+      PREFECT_API_URL: "http://prefect-server:4200/api"
+    env_file:
+      - ../.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      prefect-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/health')\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  pgdata:

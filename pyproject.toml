@@ -81,3 +81,6 @@ asyncio_mode = "auto"
 filterwarnings = [
     "ignore::DeprecationWarning",
 ]
+markers = [
+    "integration: integration tests exercising Prefect flow orchestration",
+]

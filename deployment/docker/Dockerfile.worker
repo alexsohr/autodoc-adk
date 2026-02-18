@@ -1,0 +1,23 @@
+FROM prefecthq/prefect:3-python3.11
+
+LABEL maintainer="autodoc-adk"
+LABEL component="prefect-worker"
+LABEL description="Lightweight Prefect 3 worker that polls for flow runs and delegates execution to flow runner containers"
+
+# The worker only needs the base Prefect image — no additional Python
+# dependencies are installed. It communicates with Prefect Server over HTTP
+# and launches flow runner containers (K8s jobs or local processes) without
+# executing flow code itself.
+
+ENV PREFECT_API_URL="http://prefect-server:4200/api"
+ENV PREFECT_WORK_POOL="local-dev"
+
+# Healthcheck: verify the worker process is alive and can reach Prefect Server.
+# The worker itself does not expose an HTTP port, so we probe the server API
+# that the worker depends on. Shell form is used so that PREFECT_API_URL is
+# expanded at runtime.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('$PREFECT_API_URL/health')"
+
+# Shell form so that PREFECT_WORK_POOL is expanded at runtime.
+CMD prefect worker start --pool "$PREFECT_WORK_POOL"
