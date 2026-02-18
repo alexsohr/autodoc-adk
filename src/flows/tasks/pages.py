@@ -12,7 +12,8 @@ from src.agents.page_generator import (
 from src.agents.structure_extractor.schemas import PageSpec, SectionSpec
 from src.config.settings import get_settings
 from src.database.models.wiki_page import WikiPage
-from src.services.config_loader import autodoc_config_from_dict
+from src.flows.schemas import PageTaskResult, StructureTaskResult, TokenUsageResult
+from src.services.config_loader import AutodocConfig
 
 logger = logging.getLogger(__name__)
 
@@ -52,12 +53,10 @@ async def generate_pages(
     *,
     job_id: uuid.UUID,
     wiki_structure_id: uuid.UUID,
-    structure_sections_json: list[dict],
-    structure_title: str,
-    structure_description: str,
+    structure_result: StructureTaskResult,
     repo_path: str,
-    config_dict: dict,
-) -> list[dict]:
+    config: AutodocConfig,
+) -> list[PageTaskResult]:
     """Generate wiki pages for all page specs in the structure.
 
     Iterates page specs from sections JSON, runs PageGenerator agent
@@ -67,18 +66,17 @@ async def generate_pages(
     All parameters are JSON-serializable for cross-process execution.
 
     Returns:
-        List of dicts with serializable page results.
+        List of PageTaskResult with serializable page results.
     """
     settings = get_settings()
-    config = autodoc_config_from_dict(config_dict)
 
     db_url = settings.DATABASE_URL.replace("+asyncpg", "")
     from google.adk.sessions import DatabaseSessionService
 
     session_service = DatabaseSessionService(db_url=db_url)
 
-    page_specs = _reconstruct_page_specs(structure_sections_json)
-    results: list[dict] = []
+    page_specs = _reconstruct_page_specs(structure_result.sections_json or [])
+    results: list[PageTaskResult] = []
 
     for page_spec in page_specs:
         session_id = f"page-{job_id}-{page_spec.page_key}-{uuid.uuid4().hex[:8]}"
@@ -136,19 +134,19 @@ async def generate_pages(
                     result.attempts,
                 )
 
-            results.append({
-                "page_key": result.output.page_key if result.output else page_spec.page_key,
-                "final_score": result.final_score,
-                "passed_quality_gate": result.passed_quality_gate,
-                "below_minimum_floor": result.below_minimum_floor,
-                "attempts": result.attempts,
-                "token_usage": {
-                    "input_tokens": result.token_usage.input_tokens,
-                    "output_tokens": result.token_usage.output_tokens,
-                    "total_tokens": result.token_usage.total_tokens,
-                    "calls": result.token_usage.calls,
-                },
-            })
+            results.append(PageTaskResult(
+                page_key=result.output.page_key if result.output else page_spec.page_key,
+                final_score=result.final_score,
+                passed_quality_gate=result.passed_quality_gate,
+                below_minimum_floor=result.below_minimum_floor,
+                attempts=result.attempts,
+                token_usage=TokenUsageResult(
+                    input_tokens=result.token_usage.input_tokens,
+                    output_tokens=result.token_usage.output_tokens,
+                    total_tokens=result.token_usage.total_tokens,
+                    calls=result.token_usage.calls,
+                ),
+            ))
         except Exception:
             logger.exception("Failed to generate page '%s'", page_spec.page_key)
             # Continue with remaining pages — partial results persist
