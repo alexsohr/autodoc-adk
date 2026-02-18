@@ -50,7 +50,7 @@ async def extract_structure(
     settings = get_settings()
 
     # Create ADK DatabaseSessionService
-    db_url = settings.DATABASE_URL.replace("+asyncpg", "")
+    db_url = settings.DATABASE_URL
 
     from google.adk.sessions import DatabaseSessionService
 
