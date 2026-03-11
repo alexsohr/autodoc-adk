@@ -579,6 +579,141 @@ class TestFullGenerationErrorHandling:
         mock_cleanup.assert_awaited_once_with(repo_path=REPO_PATH)
 
 
+    async def test_all_scopes_fail_marks_job_failed(self, prefect_harness):
+        """When every scope raises an exception, the job is marked FAILED."""
+        repository = _make_repository()
+        job = _make_job()
+
+        session_factory, mock_job_repo, mock_repo_repo, _mock_wiki_repo, _mock_session = (
+            _build_mock_session_factory(job, repository)
+        )
+
+        configs = [
+            _make_config(scope_path="."),
+            _make_config(scope_path="packages/auth"),
+        ]
+
+        with (
+            patch("src.flows.full_generation.get_session_factory", return_value=session_factory),
+            patch("src.flows.full_generation.JobRepo", return_value=mock_job_repo),
+            patch("src.flows.full_generation.RepositoryRepo", return_value=mock_repo_repo),
+
+            patch(
+                "src.flows.full_generation.clone_repository",
+                new_callable=AsyncMock,
+                return_value=(REPO_PATH, COMMIT_SHA),
+            ),
+            patch(
+                "src.flows.full_generation.discover_autodoc_configs",
+                new_callable=AsyncMock,
+                return_value=configs,
+            ),
+            patch(
+                "src.flows.full_generation.scope_processing_flow",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("Scope processing crashed"),
+            ),
+            patch(
+                "src.flows.full_generation.aggregate_job_metrics",
+                new_callable=AsyncMock,
+            ) as mock_metrics,
+            patch(
+                "src.flows.full_generation.cleanup_workspace",
+                new_callable=AsyncMock,
+            ) as mock_cleanup,
+            patch(
+                "src.flows.full_generation.deliver_callback",
+                new_callable=AsyncMock,
+            ),
+        ):
+            from src.flows.full_generation import full_generation_flow
+
+            await full_generation_flow(
+                repository_id=REPO_ID,
+                job_id=JOB_ID,
+                branch=BRANCH,
+                dry_run=False,
+            )
+
+        # Job should be marked FAILED
+        failed_calls = [
+            c for c in mock_job_repo.update_status.call_args_list
+            if len(c.args) >= 2 and c.args[1] == "FAILED"
+        ]
+        assert len(failed_calls) >= 1
+        error_msg = failed_calls[0].kwargs.get("error_message", "")
+        assert "All 2 scope(s) failed" in error_msg
+
+        # aggregate_job_metrics should NOT have been called (flow short-circuited)
+        mock_metrics.assert_not_awaited()
+
+        # Cleanup should still run
+        mock_cleanup.assert_awaited_once_with(repo_path=REPO_PATH)
+
+    async def test_single_scope_fail_marks_job_failed(self, prefect_harness):
+        """When the only scope raises an exception, the job is marked FAILED."""
+        repository = _make_repository()
+        job = _make_job()
+
+        session_factory, mock_job_repo, mock_repo_repo, _mock_wiki_repo, _mock_session = (
+            _build_mock_session_factory(job, repository)
+        )
+
+        with (
+            patch("src.flows.full_generation.get_session_factory", return_value=session_factory),
+            patch("src.flows.full_generation.JobRepo", return_value=mock_job_repo),
+            patch("src.flows.full_generation.RepositoryRepo", return_value=mock_repo_repo),
+
+            patch(
+                "src.flows.full_generation.clone_repository",
+                new_callable=AsyncMock,
+                return_value=(REPO_PATH, COMMIT_SHA),
+            ),
+            patch(
+                "src.flows.full_generation.discover_autodoc_configs",
+                new_callable=AsyncMock,
+                return_value=[_make_config()],
+            ),
+            patch(
+                "src.flows.full_generation.scope_processing_flow",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("LLM API unavailable"),
+            ),
+            patch(
+                "src.flows.full_generation.aggregate_job_metrics",
+                new_callable=AsyncMock,
+            ) as mock_metrics,
+            patch(
+                "src.flows.full_generation.cleanup_workspace",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.flows.full_generation.deliver_callback",
+                new_callable=AsyncMock,
+            ),
+        ):
+            from src.flows.full_generation import full_generation_flow
+
+            await full_generation_flow(
+                repository_id=REPO_ID,
+                job_id=JOB_ID,
+                branch=BRANCH,
+                dry_run=False,
+            )
+
+        # Job should be marked FAILED
+        failed_calls = [
+            c for c in mock_job_repo.update_status.call_args_list
+            if len(c.args) >= 2 and c.args[1] == "FAILED"
+        ]
+        assert len(failed_calls) >= 1
+        error_msg = failed_calls[0].kwargs.get("error_message", "")
+        assert "All 1 scope(s) failed" in error_msg
+
+        # Metrics should not run when all scopes fail
+        mock_metrics.assert_not_awaited()
+
+
 @pytest.mark.integration
 class TestFullGenerationCallbackDelivery:
     """Callback delivery on completion and failure."""
@@ -1278,6 +1413,82 @@ class TestIncrementalErrorHandling:
         assert "Provider API error" in error_msg
 
         # Cleanup should still run (repo was cloned before failure)
+        mock_cleanup.assert_awaited_once_with(repo_path=REPO_PATH)
+
+    async def test_all_scopes_fail_marks_job_failed(self, prefect_harness):
+        """When every scope raises an exception during incremental update, job is FAILED."""
+        repository = _make_repository()
+        job = _make_job(mode="incremental")
+        wiki_structure = _make_wiki_structure()
+
+        session_factory, mock_job_repo, mock_repo_repo, mock_wiki_repo, _mock_session = (
+            _build_mock_session_factory(job, repository, wiki_structure)
+        )
+
+        mock_provider = AsyncMock()
+        mock_provider.compare_commits = AsyncMock(
+            return_value=["src/core.py"],
+        )
+
+        with (
+            patch("src.flows.incremental_update.get_session_factory", return_value=session_factory),
+            patch("src.flows.incremental_update.JobRepo", return_value=mock_job_repo),
+            patch("src.flows.incremental_update.RepositoryRepo", return_value=mock_repo_repo),
+            patch("src.flows.incremental_update.WikiRepo", return_value=mock_wiki_repo),
+            patch(
+                "src.flows.incremental_update.clone_repository",
+                new_callable=AsyncMock,
+                return_value=(REPO_PATH, COMMIT_SHA),
+            ),
+            patch(
+                "src.flows.incremental_update.get_provider",
+                return_value=mock_provider,
+            ),
+            patch(
+                "src.flows.incremental_update.discover_autodoc_configs",
+                new_callable=AsyncMock,
+                return_value=[_make_config()],
+            ),
+            patch(
+                "src.flows.incremental_update._process_incremental_scope",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("Scope processing crashed"),
+            ),
+            patch(
+                "src.flows.incremental_update.aggregate_job_metrics",
+                new_callable=AsyncMock,
+            ) as mock_metrics,
+            patch(
+                "src.flows.incremental_update.cleanup_workspace",
+                new_callable=AsyncMock,
+            ) as mock_cleanup,
+            patch(
+                "src.flows.incremental_update.deliver_callback",
+                new_callable=AsyncMock,
+            ),
+        ):
+            from src.flows.incremental_update import incremental_update_flow
+
+            await incremental_update_flow(
+                repository_id=REPO_ID,
+                job_id=JOB_ID,
+                branch=BRANCH,
+                dry_run=False,
+            )
+
+        # Job should be marked FAILED
+        failed_calls = [
+            c for c in mock_job_repo.update_status.call_args_list
+            if len(c.args) >= 2 and c.args[1] == "FAILED"
+        ]
+        assert len(failed_calls) >= 1
+        error_msg = failed_calls[0].kwargs.get("error_message", "")
+        assert "All 1 scope(s) failed" in error_msg
+
+        # Metrics should not run when all scopes fail
+        mock_metrics.assert_not_awaited()
+
+        # Cleanup should still run
         mock_cleanup.assert_awaited_once_with(repo_path=REPO_PATH)
 
 

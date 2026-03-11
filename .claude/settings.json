@@ -1,5 +1,3 @@
 {
-  "enabledPlugins": {
-    "prefect@prefect": true
-  }
+  "enabledPlugins": {}
 }
