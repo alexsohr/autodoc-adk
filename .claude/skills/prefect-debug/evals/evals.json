@@ -1,0 +1,99 @@
+{
+  "skill_name": "prefect-debug",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "The full_generation_flow job for the analytics-service repo has been running for over 2 hours and nothing seems to be happening. The Prefect UI shows it as RUNNING but I can't tell if it's stuck. Can you figure out what's going on and fix it if needed?",
+      "expected_output": "Should follow the troubleshooting workflow: check health, run diagnostics, inspect the specific flow run, check children/task runs, check work pools and workers, and suggest cancellation if truly stuck.",
+      "assertions": [
+        {
+          "id": "a1",
+          "text": "Uses the prefect_debug.py CLI tool (not raw curl) as primary troubleshooting method",
+          "type": "qualitative"
+        },
+        {
+          "id": "a2",
+          "text": "Checks server health before deeper investigation",
+          "type": "qualitative"
+        },
+        {
+          "id": "a3",
+          "text": "Runs diagnose command or flow-runs with state filter to find the stuck run",
+          "type": "qualitative"
+        },
+        {
+          "id": "a4",
+          "text": "Checks child flow runs or task runs to identify where the flow is stuck",
+          "type": "qualitative"
+        },
+        {
+          "id": "a5",
+          "text": "Checks work pools and workers to identify infrastructure issues",
+          "type": "qualitative"
+        },
+        {
+          "id": "a6",
+          "text": "Mentions or offers cancellation as an option if the run is truly stuck",
+          "type": "qualitative"
+        }
+      ],
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "We ran an incremental update last night and 3 out of 5 scope workers failed. I need to understand what happened — were they all the same error or different issues? Also need to know if the pages that DID succeed are safe to keep.",
+      "expected_output": "Should find the parent flow run, list child flow runs, identify which failed, check logs for each failed child, compare error messages, and explain that partial results are accessible via API per the project's partial failure design.",
+      "assertions": [
+        {
+          "id": "b1",
+          "text": "Identifies the parent orchestrator flow run first",
+          "type": "qualitative"
+        },
+        {
+          "id": "b2",
+          "text": "Uses children command to list scope worker flow runs",
+          "type": "qualitative"
+        },
+        {
+          "id": "b3",
+          "text": "Checks logs for each failed child to compare errors",
+          "type": "qualitative"
+        },
+        {
+          "id": "b4",
+          "text": "Addresses whether successful pages are safe to keep (partial failure design)",
+          "type": "qualitative"
+        }
+      ],
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "I just deployed a new version of the flow code and triggered a full generation run but it's been sitting in PENDING for 10 minutes. Nothing is picking it up. What's wrong?",
+      "expected_output": "Should check work pool status and workers, identify that workers may not be running or pool is paused/at concurrency limit, check if the deployment is correctly configured with the right work pool.",
+      "assertions": [
+        {
+          "id": "c1",
+          "text": "Checks work pools and worker registration status",
+          "type": "qualitative"
+        },
+        {
+          "id": "c2",
+          "text": "Checks if there are active workers via work-pools --workers",
+          "type": "qualitative"
+        },
+        {
+          "id": "c3",
+          "text": "Considers concurrency limits as a possible cause",
+          "type": "qualitative"
+        },
+        {
+          "id": "c4",
+          "text": "Suggests checking Docker containers or worker processes",
+          "type": "qualitative"
+        }
+      ],
+      "files": []
+    }
+  ]
+}

@@ -11,7 +11,7 @@ from src.database.models.job import Job
 from src.errors import PermanentError
 
 _VALID_TRANSITIONS: dict[str, set[str]] = {
-    "PENDING": {"RUNNING", "CANCELLED"},
+    "PENDING": {"RUNNING", "CANCELLED", "FAILED"},
     "RUNNING": {"COMPLETED", "FAILED", "CANCELLED"},
     "FAILED": {"PENDING"},
 }
@@ -139,5 +139,16 @@ class JobRepo:
     async def get_running_jobs(self) -> list[Job]:
         """Return all jobs currently in RUNNING status."""
         stmt = sa.select(Job).where(Job.status == "RUNNING")
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_active_jobs(self) -> list[Job]:
+        """Return all jobs in PENDING or RUNNING status.
+
+        Used by startup reconciliation to detect stale jobs whose Prefect
+        flow runs have crashed or terminated without updating the application
+        job status.
+        """
+        stmt = sa.select(Job).where(Job.status.in_(["PENDING", "RUNNING"]))
         result = await self._session.execute(stmt)
         return list(result.scalars().all())

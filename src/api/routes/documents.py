@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.api.dependencies import get_repository_repo, get_search_repo, get_wiki_repo
 from src.api.schemas.documents import (
+    FullWikiResponse,
     PaginatedWikiResponse,
     ScopeInfo,
     ScopesResponse,
@@ -13,6 +14,7 @@ from src.api.schemas.documents import (
     WikiPageResponse,
     WikiPageSummary,
     WikiSection,
+    WikiSectionFull,
 )
 from src.database.repos.repository_repo import RepositoryRepo
 from src.database.repos.search_repo import SearchRepo
@@ -25,6 +27,13 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _extract_raw_sections(sections_jsonb: dict | list) -> list[dict]:
+    """Normalise the sections column which may be a list or ``{"sections": [...]}``."""
+    if isinstance(sections_jsonb, list):
+        return sections_jsonb
+    return sections_jsonb.get("sections", [])
 
 
 def _parse_section(data: dict) -> WikiSection:
@@ -41,6 +50,26 @@ def _parse_section(data: dict) -> WikiSection:
     ]
     subsections = [_parse_section(s) for s in data.get("subsections", [])]
     return WikiSection(
+        title=data.get("title", ""),
+        description=data.get("description"),
+        pages=pages,
+        subsections=subsections,
+    )
+
+
+def _parse_section_full(
+    data: dict, pages_by_key: dict[str, WikiPageResponse]
+) -> WikiSectionFull:
+    """Recursively parse a section dict, resolving page references to full content."""
+    pages = [
+        pages_by_key[p["page_key"]]
+        for p in data.get("pages", [])
+        if p.get("page_key") in pages_by_key
+    ]
+    subsections = [
+        _parse_section_full(s, pages_by_key) for s in data.get("subsections", [])
+    ]
+    return WikiSectionFull(
         title=data.get("title", ""),
         description=data.get("description"),
         pages=pages,
@@ -183,6 +212,62 @@ async def get_page(
     )
 
 
+@router.get("/{repository_id}/wiki", response_model=FullWikiResponse)
+async def get_full_wiki(
+    repository_id: uuid.UUID,
+    branch: str | None = Query(default=None, description="Branch name (defaults to public_branch)"),
+    scope: str = Query(default=".", description="Scope path"),
+    repo_repo: RepositoryRepo = Depends(get_repository_repo),
+    wiki_repo: WikiRepo = Depends(get_wiki_repo),
+) -> FullWikiResponse:
+    """Get the complete wiki structure with full page content.
+
+    Returns the section hierarchy along with all pages including their
+    content, source files, and metadata in a single response.
+    """
+    repository = await repo_repo.get_by_id(repository_id)
+    if repository is None:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    target_branch = branch or repository.public_branch
+
+    structure = await wiki_repo.get_latest_structure(
+        repository_id=repository_id,
+        branch=target_branch,
+        scope_path=scope,
+    )
+    if structure is None:
+        raise HTTPException(status_code=404, detail="No wiki found for this repository/branch/scope")
+
+    db_pages = await wiki_repo.get_pages_for_structure(structure.id)
+    pages_by_key: dict[str, WikiPageResponse] = {
+        p.page_key: WikiPageResponse(
+            page_key=p.page_key,
+            title=p.title,
+            description=p.description,
+            importance=p.importance,
+            page_type=p.page_type,
+            content=p.content,
+            source_files=p.source_files,
+            related_pages=p.related_pages,
+            quality_score=p.quality_score,
+        )
+        for p in db_pages
+    }
+
+    raw_sections = _extract_raw_sections(structure.sections)
+    sections = [_parse_section_full(s, pages_by_key) for s in raw_sections]
+
+    return FullWikiResponse(
+        title=structure.title,
+        description=structure.description,
+        scope_path=structure.scope_path,
+        branch=target_branch,
+        commit_sha=structure.commit_sha,
+        sections=sections,
+    )
+
+
 @router.get("/{repository_id}", response_model=PaginatedWikiResponse)
 async def get_wiki(
     repository_id: uuid.UUID,
@@ -213,7 +298,7 @@ async def get_wiki(
         raise HTTPException(status_code=404, detail="No wiki found for this repository/branch/scope")
 
     # Parse sections from the stored JSON structure.
-    raw_sections = structure.sections.get("sections", [])
+    raw_sections = _extract_raw_sections(structure.sections)
     all_sections = [_parse_section(s) for s in raw_sections]
 
     # Apply cursor-based pagination on top-level sections.

@@ -68,15 +68,18 @@ async def _check_otel() -> DependencyHealth:
 async def health_check(
     session: AsyncSession = Depends(get_db_session),
 ) -> HealthResponse:
+    settings = get_settings()
     db = await _check_database(session)
     prefect = await _check_prefect()
-    otel = await _check_otel()
 
-    deps = {"database": db, "prefect": prefect, "otel": otel}
+    deps: dict[str, DependencyHealth] = {"database": db, "prefect": prefect}
+
+    if settings.OTEL_ENABLED:
+        deps["otel"] = await _check_otel()
 
     # Determine overall status
     critical_healthy = db.status == "healthy" and prefect.status == "healthy"
-    all_healthy = critical_healthy and otel.status == "healthy"
+    all_healthy = all(d.status == "healthy" for d in deps.values())
 
     if all_healthy:
         status = "healthy"

@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     MAX_AGENT_ATTEMPTS: int = 3
     STRUCTURE_COVERAGE_CRITERION_FLOOR: float = 5.0
     PAGE_ACCURACY_CRITERION_FLOOR: float = 5.0
+    PAGE_GENERATION_CONCURRENCY: int = 3
 
     # Clone directory (None = system temp directory)
     CLONE_DIR: str = ""
@@ -66,6 +67,7 @@ class Settings(BaseSettings):
     SESSION_ARCHIVE_BUCKET: str = ""
 
     # OpenTelemetry
+    OTEL_ENABLED: bool = False
     OTEL_EXPORTER_OTLP_ENDPOINT: str = "http://localhost:4317"
     OTEL_SERVICE_NAME: str = "autodoc-adk"
 

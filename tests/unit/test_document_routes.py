@@ -567,3 +567,135 @@ class TestGetWiki:
         data = response.json()
         assert data["items"] == []
         assert data["next_cursor"] is None
+
+
+# ===================================================================
+# GET /documents/{repo_id}/wiki
+# ===================================================================
+
+
+class TestGetFullWiki:
+    """Tests for GET /documents/{repo_id}/wiki."""
+
+    async def test_returns_structure_with_embedded_pages(
+        self, client: httpx.AsyncClient, mock_wiki_repo: AsyncMock
+    ):
+        page1 = _make_page("getting-started/overview")
+        page2 = _make_page("api/endpoints")
+        page2.title = "Endpoints"
+        page2.content = "# Endpoints\n\nAPI endpoint docs."
+        page3 = _make_page("api/auth")
+        page3.title = "Authentication"
+        page3.content = "# Auth\n\nAuth docs."
+        mock_wiki_repo.get_pages_for_structure = AsyncMock(
+            return_value=[page1, page2, page3]
+        )
+
+        response = await client.get(f"/documents/{REPO_ID}/wiki")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["title"] == "Root Docs"
+        assert data["description"] == "Root documentation scope"
+        assert data["scope_path"] == "."
+        assert data["branch"] == "main"
+        assert data["commit_sha"] is not None
+
+        # Pages are embedded in sections, not in a flat list
+        assert "pages" not in data or data.get("pages") is None or isinstance(
+            data["sections"][0]["pages"][0], dict
+        )
+
+        # Section 1: Getting Started has the overview page with full content
+        section1 = data["sections"][0]
+        assert section1["title"] == "Getting Started"
+        assert len(section1["pages"]) == 1
+        assert section1["pages"][0]["page_key"] == "getting-started/overview"
+        assert "# Overview" in section1["pages"][0]["content"]
+        assert section1["pages"][0]["source_files"] == ["src/main.py", "src/utils.py"]
+
+        # Section 2: API Reference has endpoints page + Auth subsection with auth page
+        section2 = data["sections"][1]
+        assert section2["title"] == "API Reference"
+        assert len(section2["pages"]) == 1
+        assert section2["pages"][0]["page_key"] == "api/endpoints"
+        assert "# Endpoints" in section2["pages"][0]["content"]
+
+        # Nested subsection has full page content too
+        auth_sub = section2["subsections"][0]
+        assert auth_sub["title"] == "Auth"
+        assert len(auth_sub["pages"]) == 1
+        assert auth_sub["pages"][0]["page_key"] == "api/auth"
+        assert "# Auth" in auth_sub["pages"][0]["content"]
+
+        # Section 3: Internals has no pages
+        section3 = data["sections"][2]
+        assert section3["title"] == "Internals"
+        assert len(section3["pages"]) == 0
+
+    async def test_missing_page_skipped_in_section(
+        self, client: httpx.AsyncClient, mock_wiki_repo: AsyncMock
+    ):
+        """Pages referenced in structure but missing from DB are skipped."""
+        # Only return one page; the others referenced in structure will be missing
+        page1 = _make_page("getting-started/overview")
+        mock_wiki_repo.get_pages_for_structure = AsyncMock(return_value=[page1])
+
+        response = await client.get(f"/documents/{REPO_ID}/wiki")
+
+        assert response.status_code == 200
+        data = response.json()
+        # Section 1 has the page
+        assert len(data["sections"][0]["pages"]) == 1
+        # Section 2 references api/endpoints but it's missing from DB
+        assert len(data["sections"][1]["pages"]) == 0
+
+    async def test_passes_scope_param(
+        self, client: httpx.AsyncClient, mock_wiki_repo: AsyncMock
+    ):
+        mock_wiki_repo.get_pages_for_structure = AsyncMock(return_value=[])
+
+        response = await client.get(
+            f"/documents/{REPO_ID}/wiki",
+            params={"scope": "packages/core"},
+        )
+
+        assert response.status_code == 200
+        mock_wiki_repo.get_latest_structure.assert_called_once_with(
+            repository_id=REPO_ID,
+            branch="main",
+            scope_path="packages/core",
+        )
+
+    async def test_passes_branch_param(
+        self, client: httpx.AsyncClient, mock_wiki_repo: AsyncMock
+    ):
+        mock_wiki_repo.get_pages_for_structure = AsyncMock(return_value=[])
+
+        response = await client.get(
+            f"/documents/{REPO_ID}/wiki",
+            params={"branch": "develop"},
+        )
+
+        assert response.status_code == 200
+        mock_wiki_repo.get_latest_structure.assert_called_once_with(
+            repository_id=REPO_ID,
+            branch="develop",
+            scope_path=".",
+        )
+
+    async def test_returns_404_for_unknown_repo(self, client: httpx.AsyncClient):
+        response = await client.get(f"/documents/{UNKNOWN_REPO_ID}/wiki")
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Repository not found"
+
+    async def test_returns_404_when_no_wiki_structure(
+        self, client: httpx.AsyncClient, mock_wiki_repo: AsyncMock
+    ):
+        mock_wiki_repo.get_latest_structure = AsyncMock(return_value=None)
+
+        response = await client.get(f"/documents/{REPO_ID}/wiki")
+
+        assert response.status_code == 404
+        assert "No wiki found" in response.json()["detail"]

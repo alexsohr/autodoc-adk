@@ -1,9 +1,10 @@
-"""Startup reconciliation of stale RUNNING jobs against Prefect flow run states."""
+"""Startup reconciliation of stale PENDING/RUNNING jobs against Prefect flow run states."""
 
 from __future__ import annotations
 
 import logging
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,37 +12,63 @@ from src.database.repos.job_repo import JobRepo
 
 logger = logging.getLogger(__name__)
 
+# PENDING jobs older than this are considered stale even without a Prefect flow run ID.
+# This catches the case where the flow crashes before committing the RUNNING status.
+_PENDING_STALENESS_THRESHOLD = timedelta(minutes=30)
+
 
 async def reconcile_stale_jobs(session: AsyncSession) -> None:
-    """Reconcile jobs stuck in RUNNING status against Prefect flow run states.
+    """Reconcile jobs stuck in PENDING or RUNNING status against Prefect flow run states.
 
-    For each RUNNING job, checks the corresponding Prefect flow run.  If the
-    flow run has reached a terminal state (or no flow run ID was recorded),
-    the job is transitioned to FAILED with an explanatory error message.
+    Handles two scenarios:
+    1. RUNNING jobs whose Prefect flow run has crashed or completed without
+       updating the application-level job status.
+    2. PENDING jobs that have been waiting longer than the staleness threshold,
+       indicating the Prefect flow either crashed before transitioning the job
+       to RUNNING, or was never submitted.
+
+    For each stale job, the status is transitioned to FAILED with an explanatory
+    error message.
 
     This function is intended to be called once during application startup.
     """
     repo = JobRepo(session)
-    running_jobs = await repo.get_running_jobs()
+    active_jobs = await repo.get_active_jobs()
 
-    if not running_jobs:
-        logger.info("No stale RUNNING jobs to reconcile")
+    if not active_jobs:
+        logger.info("No stale PENDING/RUNNING jobs to reconcile")
         return
 
-    logger.info("Reconciling %d RUNNING job(s) against Prefect", len(running_jobs))
+    logger.info("Reconciling %d active job(s) against Prefect", len(active_jobs))
 
+    now = datetime.now(timezone.utc)
     from prefect.client.orchestration import get_client
 
     async with get_client() as client:
-        for job in running_jobs:
+        for job in active_jobs:
+            # For PENDING jobs without a flow run ID, check age
             if job.prefect_flow_run_id is None:
+                if job.status == "PENDING":
+                    age = now - job.created_at.replace(tzinfo=timezone.utc)
+                    if age < _PENDING_STALENESS_THRESHOLD:
+                        logger.info(
+                            "Job %s is PENDING but only %s old, skipping",
+                            job.id,
+                            age,
+                        )
+                        continue
                 await repo.update_status(
                     job.id,
                     "FAILED",
-                    error_message="Stale job reconciled on startup: no flow run ID",
+                    error_message=(
+                        f"Stale {job.status} job reconciled on startup: "
+                        "no Prefect flow run ID recorded"
+                    ),
                 )
                 logger.warning(
-                    "Reconciled job %s -> FAILED (no flow run ID)", job.id
+                    "Reconciled job %s (%s) -> FAILED (no flow run ID)",
+                    job.id,
+                    job.status,
                 )
                 continue
 
@@ -57,11 +84,15 @@ async def reconcile_stale_jobs(session: AsyncSession) -> None:
                 await repo.update_status(
                     job.id,
                     "FAILED",
-                    error_message="Stale job reconciled on startup",
+                    error_message=(
+                        f"Stale {job.status} job reconciled on startup: "
+                        "could not read Prefect flow run"
+                    ),
                 )
                 logger.warning(
-                    "Reconciled job %s -> FAILED (could not read flow run)",
+                    "Reconciled job %s (%s) -> FAILED (could not read flow run)",
                     job.id,
+                    job.status,
                 )
                 continue
 
@@ -69,17 +100,22 @@ async def reconcile_stale_jobs(session: AsyncSession) -> None:
                 await repo.update_status(
                     job.id,
                     "FAILED",
-                    error_message="Stale job reconciled on startup",
+                    error_message=(
+                        f"Stale {job.status} job reconciled on startup: "
+                        f"Prefect flow run was {flow_run.state.name}"
+                    ),
                 )
                 logger.warning(
-                    "Reconciled job %s -> FAILED (Prefect state: %s)",
+                    "Reconciled job %s (%s) -> FAILED (Prefect state: %s)",
                     job.id,
+                    job.status,
                     flow_run.state.name,
                 )
             else:
                 state_name = flow_run.state.name if flow_run.state else "unknown"
                 logger.info(
-                    "Job %s still active in Prefect (state: %s), skipping",
+                    "Job %s (%s) still active in Prefect (state: %s), skipping",
                     job.id,
+                    job.status,
                     state_name,
                 )
