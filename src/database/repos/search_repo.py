@@ -20,6 +20,8 @@ class TextSearchResult:
     title: str
     content: str
     score: float  # ts_rank
+    best_chunk_content: str
+    best_chunk_heading_path: list[str]
     scope_path: str
 
 
@@ -73,7 +75,7 @@ class SearchRepo:
         self._session = session
 
     # ------------------------------------------------------------------
-    # Text search
+    # Text search (page-level BM25 with best-chunk extraction)
     # ------------------------------------------------------------------
 
     async def text_search(
@@ -85,30 +87,60 @@ class SearchRepo:
         scope_path: str | None = None,
         limit: int = 10,
     ) -> list[TextSearchResult]:
-        """Full-text search using PostgreSQL ts_rank on the GIN index."""
+        """Full-text search on wiki_pages.content with best-chunk extraction.
+
+        Matching and ranking use **page-level** tsvector so that multi-term
+        queries work (terms may be spread across different chunks of the same
+        page).  The most relevant chunk is extracted from ``page_chunks``
+        for display purposes.
+        """
 
         scope_filter = "AND ws.scope_path = :scope_path" if scope_path is not None else ""
 
         sql = text(f"""
+            WITH page_matches AS (
+                SELECT
+                    wp.id AS wiki_page_id,
+                    ts_rank(
+                        to_tsvector('english', wp.content),
+                        plainto_tsquery('english', :query)
+                    ) AS score
+                FROM wiki_pages wp
+                JOIN wiki_structures ws ON wp.wiki_structure_id = ws.id
+                WHERE ws.repository_id = :repo_id
+                  AND ws.branch = :branch
+                  {scope_filter}
+                  AND {_LATEST_VERSION_SUBQUERY}
+                  AND to_tsvector('english', wp.content)
+                      @@ plainto_tsquery('english', :query)
+            ),
+            best_chunks AS (
+                SELECT
+                    pc.wiki_page_id,
+                    pc.content    AS chunk_content,
+                    pc.heading_path,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY pc.wiki_page_id
+                        ORDER BY ts_rank(pc.search_vector, plainto_tsquery('english', :query)) DESC
+                    ) AS rn
+                FROM page_chunks pc
+                WHERE pc.wiki_page_id IN (SELECT wiki_page_id FROM page_matches)
+            )
             SELECT
                 wp.id         AS page_id,
                 wp.page_key,
                 wp.title,
                 wp.content,
-                ts_rank(
-                    to_tsvector('english', wp.content),
-                    plainto_tsquery('english', :query)
-                ) AS score,
+                pm.score,
+                bc.chunk_content AS best_chunk_content,
+                bc.heading_path  AS best_chunk_heading_path,
                 ws.scope_path
-            FROM wiki_pages wp
+            FROM page_matches pm
+            JOIN wiki_pages wp ON pm.wiki_page_id = wp.id
             JOIN wiki_structures ws ON wp.wiki_structure_id = ws.id
-            WHERE ws.repository_id = :repo_id
-              AND ws.branch = :branch
-              {scope_filter}
-              AND {_LATEST_VERSION_SUBQUERY}
-              AND to_tsvector('english', wp.content)
-                  @@ plainto_tsquery('english', :query)
-            ORDER BY score DESC
+            LEFT JOIN best_chunks bc
+                ON pm.wiki_page_id = bc.wiki_page_id AND bc.rn = 1
+            ORDER BY pm.score DESC
             LIMIT :limit
         """)
 
@@ -129,6 +161,8 @@ class SearchRepo:
                 title=row.title,
                 content=row.content,
                 score=row.score,
+                best_chunk_content=row.best_chunk_content,
+                best_chunk_heading_path=list(row.best_chunk_heading_path),
                 scope_path=row.scope_path,
             )
             for row in result
@@ -217,7 +251,7 @@ class SearchRepo:
         ]
 
     # ------------------------------------------------------------------
-    # Hybrid search (RRF)
+    # Hybrid search (RRF) — page-level text + chunk-level semantic
     # ------------------------------------------------------------------
 
     async def hybrid_search(
@@ -232,7 +266,14 @@ class SearchRepo:
         chunk_limit: int = 100,
         rrf_k: int = 60,
     ) -> list[HybridSearchResult]:
-        """Reciprocal Rank Fusion combining text and semantic search."""
+        """Reciprocal Rank Fusion combining page-level text and chunk-level semantic search.
+
+        The text channel matches on ``wiki_pages.content`` (page-level) so
+        that multi-term queries work when terms are spread across chunks.
+        The semantic channel uses chunk-level cosine similarity with
+        best-chunk-wins aggregation to page level.  Both channels produce
+        page-level rankings for clean RRF fusion.
+        """
 
         scope_filter = "AND ws.scope_path = :scope_path" if scope_path is not None else ""
 

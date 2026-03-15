@@ -9,6 +9,7 @@ from sqlalchemy import (
     TIMESTAMP,
     Boolean,
     CheckConstraint,
+    Computed,
     ForeignKey,
     Index,
     Integer,
@@ -17,6 +18,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.database.models.base import Base, UUIDPrimaryKeyMixin
@@ -35,8 +37,6 @@ class PageChunk(UUIDPrimaryKeyMixin, Base):
         CheckConstraint("start_char >= 0", name="ck_page_chunks_start_char"),
         CheckConstraint("end_char > start_char", name="ck_page_chunks_end_char"),
         Index("ix_page_chunks_page_id", "wiki_page_id"),
-        # HNSW index on halfvec(3072) cast — created via migration raw SQL
-        # (pgvector HNSW max 2000 dims for vector, 4000 for halfvec)
     )
 
     wiki_page_id: Mapped[uuid.UUID] = mapped_column(
@@ -45,7 +45,15 @@ class PageChunk(UUIDPrimaryKeyMixin, Base):
     )
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    content_embedding = mapped_column(Vector(3072), nullable=True)
+    context_prefix: Mapped[str | None] = mapped_column(Text, nullable=True)
+    content_embedding = mapped_column(Vector(1024), nullable=True)
+    search_vector = mapped_column(
+        TSVECTOR,
+        Computed(
+            "to_tsvector('english', coalesce(context_prefix, '') || ' ' || content)",
+            persisted=True,
+        ),
+    )
     heading_path: Mapped[list[str]] = mapped_column(
         ARRAY(String), nullable=False, server_default="{}"
     )

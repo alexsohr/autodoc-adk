@@ -22,24 +22,30 @@ This project (autodoc-adk) uses:
 
 A dedicated CLI is bundled at `.claude/skills/prefect-debug/scripts/prefect_debug.py`. Use it for all Prefect queries — it's more readable and repeatable than raw curl.
 
+**Important: Run the script with `uv run python`** (not bare `python`) since this project uses uv for dependency management. The script uses only stdlib so it doesn't need extra deps, but `python` may not be on PATH in uv-managed environments.
+
 ```bash
-# Quick reference
-python .claude/skills/prefect-debug/scripts/prefect_debug.py health
-python .claude/skills/prefect-debug/scripts/prefect_debug.py diagnose [--hours 24] [--stuck-threshold 60] [--late-threshold 15]
-python .claude/skills/prefect-debug/scripts/prefect_debug.py flow-runs [--state FAILED CRASHED] [--flow-name X] [--limit 20]
-python .claude/skills/prefect-debug/scripts/prefect_debug.py flow-run <id>
-python .claude/skills/prefect-debug/scripts/prefect_debug.py children <parent-id>
-python .claude/skills/prefect-debug/scripts/prefect_debug.py task-runs --flow-run-id <id> [--state FAILED]
-python .claude/skills/prefect-debug/scripts/prefect_debug.py task-run <id>
-python .claude/skills/prefect-debug/scripts/prefect_debug.py logs --flow-run-id <id> [--level ERROR] [--search "traceback"]
-python .claude/skills/prefect-debug/scripts/prefect_debug.py work-pools [--workers]
-python .claude/skills/prefect-debug/scripts/prefect_debug.py deployments
-python .claude/skills/prefect-debug/scripts/prefect_debug.py cancel <id>
-python .claude/skills/prefect-debug/scripts/prefect_debug.py set-state <id> FAILED [--message "reason"]
-python .claude/skills/prefect-debug/scripts/prefect_debug.py trigger <deployment-id> [--params '{"key": "val"}']
+# Quick reference (always use `uv run python`, not `python`)
+uv run uv run python .claude/skills/prefect-debug/scripts/prefect_debug.py health
+uv run uv run python .claude/skills/prefect-debug/scripts/prefect_debug.py diagnose [--hours 24] [--stuck-threshold 60] [--late-threshold 15]
+uv run uv run python .claude/skills/prefect-debug/scripts/prefect_debug.py flow-runs [--state FAILED CRASHED] [--flow-name X] [--limit 20]
+uv run uv run python .claude/skills/prefect-debug/scripts/prefect_debug.py flow-run <id>
+uv run uv run python .claude/skills/prefect-debug/scripts/prefect_debug.py children <parent-id>
+uv run uv run python .claude/skills/prefect-debug/scripts/prefect_debug.py task-runs --flow-run-id <id> [--state FAILED]
+uv run uv run python .claude/skills/prefect-debug/scripts/prefect_debug.py task-run <id>
+uv run uv run python .claude/skills/prefect-debug/scripts/prefect_debug.py logs --flow-run-id <id> [--level ERROR] [--search "traceback"]
+uv run uv run python .claude/skills/prefect-debug/scripts/prefect_debug.py work-pools [--workers]
+uv run uv run python .claude/skills/prefect-debug/scripts/prefect_debug.py deployments
+uv run uv run python .claude/skills/prefect-debug/scripts/prefect_debug.py cancel <id>
+uv run uv run python .claude/skills/prefect-debug/scripts/prefect_debug.py set-state <id> FAILED [--message "reason"]
+uv run uv run python .claude/skills/prefect-debug/scripts/prefect_debug.py trigger <deployment-id> [--params '{"key": "val"}']
 ```
 
 All commands support `--json` for raw output. Override URL: `--api-url http://host:port/api` or `PREFECT_API_URL` env var.
+
+**Short ID prefixes work everywhere.** You don't need to copy full UUIDs — `flow-run 844e0247` will auto-resolve to the full ID via prefix matching. This works for `flow-run`, `children`, `task-run`, `cancel`, and `set-state` commands. If a prefix is ambiguous, the CLI lists matches and exits.
+
+**Flow names are resolved automatically.** The `flow-runs` and `flow-run` commands resolve the raw `flow_id` to human-readable flow names (e.g., `scope_processing_flow`) via the `/flows/filter` API.
 
 ## Troubleshooting Workflow
 
@@ -47,13 +53,13 @@ Follow this sequence. Each step builds on the previous — don't skip ahead.
 
 ### Step 1: Health Check
 ```bash
-python .claude/skills/prefect-debug/scripts/prefect_debug.py health
+uv run python .claude/skills/prefect-debug/scripts/prefect_debug.py health
 ```
 If unreachable, check Docker: `docker ps | grep prefect`
 
 ### Step 2: Diagnostics
 ```bash
-python .claude/skills/prefect-debug/scripts/prefect_debug.py diagnose
+uv run python .claude/skills/prefect-debug/scripts/prefect_debug.py diagnose
 ```
 This checks: server health, work pools + workers, failed/crashed runs, stuck runs (RUNNING too long), late runs (SCHEDULED/PENDING past expected start), and an activity summary.
 
@@ -62,7 +68,7 @@ This checks: server health, work pools + workers, failed/crashed runs, stuck run
 If `diagnose` shows zero activity or the expected flow runs are missing, the run likely happened on a **different Prefect Server instance** (e.g., production vs. local dev). This is common — ask the user which environment the run was on, or try:
 ```bash
 # Point at a different server
-python .claude/skills/prefect-debug/scripts/prefect_debug.py --api-url http://<other-host>:4200/api flow-runs --limit 10
+uv run python .claude/skills/prefect-debug/scripts/prefect_debug.py --api-url http://<other-host>:4200/api flow-runs --limit 10
 ```
 Also check the application database for job records that might reference a `prefect_flow_run_id` you can look up.
 

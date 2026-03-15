@@ -29,7 +29,7 @@ from src.services.search import (
 REPO_ID = uuid.uuid4()
 PAGE_ID = uuid.uuid4()
 BRANCH = "main"
-FAKE_EMBEDDING = [0.1] * 3072
+FAKE_EMBEDDING = [0.1] * 1024
 
 
 def _make_text_row(
@@ -39,6 +39,8 @@ def _make_text_row(
     title: str = "Getting Started",
     content: str = "Install the package using pip.",
     score: float = 0.85,
+    best_chunk_content: str = "Install the package using pip install.",
+    best_chunk_heading_path: list[str] | None = None,
     scope_path: str = ".",
 ) -> SimpleNamespace:
     """Simulate a SQLAlchemy Row returned by execute() for text search."""
@@ -48,6 +50,8 @@ def _make_text_row(
         title=title,
         content=content,
         score=score,
+        best_chunk_content=best_chunk_content,
+        best_chunk_heading_path=best_chunk_heading_path or ["Getting Started"],
         scope_path=scope_path,
     )
 
@@ -134,6 +138,8 @@ class TestSearchRepoTextSearch:
         assert r.title == "Getting Started"
         assert r.content == "Install the package using pip."
         assert r.score == 0.85
+        assert r.best_chunk_content == "Install the package using pip install."
+        assert r.best_chunk_heading_path == ["Getting Started"]
         assert r.scope_path == "."
 
     @pytest.mark.asyncio
@@ -435,6 +441,25 @@ class TestHybridSearchSQLStructure:
         assert "MAX(version)" in sql_text
 
     @pytest.mark.asyncio
+    async def test_sql_uses_page_level_text_search(self):
+        """Verify text channel searches on wiki_pages.content (page-level)."""
+        session = _mock_session([])
+        repo = SearchRepo(session)
+
+        await repo.hybrid_search(
+            query="test",
+            query_embedding=FAKE_EMBEDDING,
+            repository_id=REPO_ID,
+            branch=BRANCH,
+        )
+
+        sql_arg = session.execute.call_args[0][0]
+        sql_text = sql_arg.text
+
+        assert "to_tsvector('english', wp.content)" in sql_text
+        assert "text_results" in sql_text
+
+    @pytest.mark.asyncio
     async def test_scope_filter_included_in_sql_when_provided(self):
         session = _mock_session([])
         repo = SearchRepo(session)
@@ -548,6 +573,8 @@ class TestSearchDocumentsText:
                 title="Introduction",
                 content="Welcome to the docs.",
                 score=0.8,
+                best_chunk_content="Welcome to the docs.",
+                best_chunk_heading_path=["Intro"],
                 scope_path=".",
             )
         ]
@@ -570,7 +597,7 @@ class TestSearchDocumentsText:
         assert response.results[0].snippet == "Welcome to the docs."
 
     @pytest.mark.asyncio
-    async def test_text_results_have_no_chunk_fields(self):
+    async def test_text_results_have_chunk_fields(self):
         mock_repo = AsyncMock(spec=SearchRepo)
         mock_repo.text_search.return_value = [
             TextSearchResult(
@@ -579,6 +606,8 @@ class TestSearchDocumentsText:
                 title="Introduction",
                 content="Welcome.",
                 score=0.8,
+                best_chunk_content="Welcome to the docs.",
+                best_chunk_heading_path=["Intro"],
                 scope_path=".",
             )
         ]
@@ -593,8 +622,8 @@ class TestSearchDocumentsText:
             )
 
         result = response.results[0]
-        assert result.best_chunk_content is None
-        assert result.best_chunk_heading_path is None
+        assert result.best_chunk_content == "Welcome to the docs."
+        assert result.best_chunk_heading_path == ["Intro"]
 
 
 class TestSearchDocumentsSemantic:
@@ -761,6 +790,8 @@ class TestSearchDocumentsResultMapping:
                 title="Getting Started",
                 content=long_content,
                 score=0.7,
+                best_chunk_content="word word word",
+                best_chunk_heading_path=["Getting Started"],
                 scope_path=".",
             )
         ]
@@ -790,6 +821,8 @@ class TestSearchDocumentsResultMapping:
                 title="T",
                 content="C",
                 score=0.5,
+                best_chunk_content="C",
+                best_chunk_heading_path=[],
                 scope_path="packages/core",
             )
         ]

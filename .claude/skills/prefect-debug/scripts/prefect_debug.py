@@ -88,6 +88,104 @@ def api_delete(path: str) -> Any:
 
 
 # ---------------------------------------------------------------------------
+# ID prefix resolution
+# ---------------------------------------------------------------------------
+
+def _api_no_exit(method: str, path: str, body: dict | None = None) -> Any | None:
+    """Like _api but returns None on HTTP errors instead of sys.exit."""
+    url = f"{PREFECT_API_URL}{path}"
+    data = json.dumps(body).encode() if body else None
+    headers = {"Content-Type": "application/json"} if data else {}
+    req = Request(url, data=data, headers=headers, method=method)
+    try:
+        with urlopen(req, timeout=30) as resp:
+            raw = resp.read()
+            if not raw:
+                return None
+            return json.loads(raw)
+    except (HTTPError, URLError):
+        return None
+
+
+def resolve_flow_run_id(prefix: str) -> str:
+    """Resolve a short ID prefix to a full flow run UUID.
+
+    If *prefix* is already a full UUID (36 chars with dashes), return as-is.
+    Otherwise fetch recent flow runs and do client-side prefix matching.
+    Exits with an error if zero or multiple matches are found.
+    """
+    if len(prefix) == 36 and prefix.count("-") == 4:
+        return prefix
+
+    # Client-side prefix matching against recent flow runs
+    runs = _api_no_exit("POST", "/flow_runs/filter", {"sort": "START_TIME_DESC", "limit": 200})
+    matches = [r for r in (runs or []) if r["id"].startswith(prefix)]
+
+    if not matches:
+        print(f"No flow run found matching prefix '{prefix}'", file=sys.stderr)
+        sys.exit(1)
+    if len(matches) > 1:
+        print(f"Ambiguous prefix '{prefix}' — matches {len(matches)} flow runs:", file=sys.stderr)
+        for r in matches[:5]:
+            print(f"  {r['id']}  {r.get('name', '-')}", file=sys.stderr)
+        sys.exit(1)
+    return matches[0]["id"]
+
+
+def resolve_task_run_id(prefix: str) -> str:
+    """Resolve a short ID prefix to a full task run UUID."""
+    if len(prefix) == 36 and prefix.count("-") == 4:
+        return prefix
+
+    runs = _api_no_exit("POST", "/task_runs/filter", {"sort": "EXPECTED_START_TIME_ASC", "limit": 200})
+    matches = [r for r in (runs or []) if r["id"].startswith(prefix)]
+
+    if not matches:
+        print(f"No task run found matching prefix '{prefix}'", file=sys.stderr)
+        sys.exit(1)
+    if len(matches) > 1:
+        print(f"Ambiguous prefix '{prefix}' — matches {len(matches)} task runs:", file=sys.stderr)
+        for r in matches[:5]:
+            print(f"  {r['id']}  {r.get('name', '-')}", file=sys.stderr)
+        sys.exit(1)
+    return matches[0]["id"]
+
+
+# ---------------------------------------------------------------------------
+# Flow name cache
+# ---------------------------------------------------------------------------
+
+_flow_name_cache: dict[str, str] = {}
+
+
+def resolve_flow_names(flow_ids: list[str]) -> dict[str, str]:
+    """Batch-resolve flow IDs to flow names via the /flows/filter endpoint.
+
+    Results are cached for the lifetime of the process.
+    """
+    missing = [fid for fid in flow_ids if fid and fid not in _flow_name_cache]
+    if missing:
+        # Deduplicate
+        unique_missing = list(set(missing))
+        try:
+            flows = api_post("/flows/filter", {
+                "flows": {"id": {"any_": unique_missing}},
+                "limit": len(unique_missing),
+            })
+            for f in (flows or []):
+                _flow_name_cache[f["id"]] = f.get("name", "?")
+        except SystemExit:
+            pass  # Non-fatal — flow names will just show as "-"
+
+        # Fill any still-missing with "-"
+        for fid in unique_missing:
+            if fid not in _flow_name_cache:
+                _flow_name_cache[fid] = "-"
+
+    return _flow_name_cache
+
+
+# ---------------------------------------------------------------------------
 # Formatters
 # ---------------------------------------------------------------------------
 
@@ -215,16 +313,21 @@ def cmd_flow_runs(args: argparse.Namespace) -> None:
         print("No flow runs found.")
         return
 
+    # Resolve flow IDs to human-readable flow names
+    flow_ids = [r.get("flow_id", "") for r in runs]
+    flow_names = resolve_flow_names(flow_ids)
+
     print(f"{'ID':<38} {'NAME':<30} {'STATE':<25} {'STARTED':<20} {'DURATION':<10} {'FLOW':<20}")
     print("-" * 150)
     for r in runs:
+        flow_name = flow_names.get(r.get("flow_id", ""), "-")
         print(
             f"{r['id']:<38} "
             f"{(r.get('name') or '-')[:29]:<30} "
             f"{fmt_state(r.get('state'), r.get('state_type'), r.get('state_name')):<35} "
             f"{fmt_time(r.get('start_time')):<20} "
             f"{fmt_duration(r.get('start_time'), r.get('end_time')):<10} "
-            f"{(r.get('flow_name') or '-')[:19]:<20}"
+            f"{flow_name[:19]:<20}"
         )
 
     print(f"\nShowing {len(runs)} flow runs (offset={args.offset})")
@@ -232,7 +335,8 @@ def cmd_flow_runs(args: argparse.Namespace) -> None:
 
 def cmd_flow_run_detail(args: argparse.Namespace) -> None:
     """Get detailed info for a specific flow run."""
-    run = api_get(f"/flow_runs/{args.id}")
+    full_id = resolve_flow_run_id(args.id)
+    run = api_get(f"/flow_runs/{full_id}")
 
     if args.json:
         print_json(run)
@@ -240,7 +344,9 @@ def cmd_flow_run_detail(args: argparse.Namespace) -> None:
 
     print(f"Flow Run: {run.get('name', '-')}")
     print(f"  ID:            {run['id']}")
-    print(f"  Flow:          {run.get('flow_name', run.get('flow_id', '-'))}")
+    flow_id = run.get("flow_id", "")
+    flow_name = resolve_flow_names([flow_id]).get(flow_id, "-") if flow_id else "-"
+    print(f"  Flow:          {flow_name} ({flow_id[:8]}..)")
     print(f"  Deployment:    {run.get('deployment_id', '-')}")
     print(f"  State:         {fmt_state(run.get('state'), run.get('state_type'), run.get('state_name'))}")
     msg = (run.get("state") or {}).get("message", "")
@@ -269,8 +375,9 @@ def cmd_flow_run_detail(args: argparse.Namespace) -> None:
 
 def cmd_flow_run_children(args: argparse.Namespace) -> None:
     """List child flow runs of a parent flow run."""
+    full_id = resolve_flow_run_id(args.id)
     body = {
-        "flow_runs": {"parent_flow_run_id": {"any_": [args.id]}},
+        "flow_runs": {"parent_flow_run_id": {"any_": [full_id]}},
         "sort": "EXPECTED_START_TIME_ASC",
         "limit": args.limit,
     }
@@ -284,7 +391,7 @@ def cmd_flow_run_children(args: argparse.Namespace) -> None:
         print("No child flow runs found.")
         return
 
-    print(f"Child flow runs of {args.id}:\n")
+    print(f"Child flow runs of {full_id}:\n")
     print(f"{'ID':<38} {'NAME':<30} {'STATE':<25} {'STARTED':<20} {'DURATION':<10}")
     print("-" * 130)
     for r in runs:
@@ -343,7 +450,8 @@ def cmd_task_runs(args: argparse.Namespace) -> None:
 
 def cmd_task_run_detail(args: argparse.Namespace) -> None:
     """Get detailed info for a specific task run."""
-    run = api_get(f"/task_runs/{args.id}")
+    full_id = resolve_task_run_id(args.id)
+    run = api_get(f"/task_runs/{full_id}")
     if args.json:
         print_json(run)
         return
@@ -517,11 +625,12 @@ def cmd_deployments(args: argparse.Namespace) -> None:
 
 def cmd_cancel(args: argparse.Namespace) -> None:
     """Cancel a flow run."""
-    result = api_post(f"/flow_runs/{args.id}/set_state", {
+    full_id = resolve_flow_run_id(args.id)
+    result = api_post(f"/flow_runs/{full_id}/set_state", {
         "state": {"type": "CANCELLING", "message": args.message or "Cancelled via prefect_debug.py"},
         "force": args.force,
     })
-    print(f"Cancel request sent for flow run {args.id}")
+    print(f"Cancel request sent for flow run {full_id}")
     if result:
         print(f"Result: {json.dumps(result, default=str)}")
 
@@ -533,11 +642,12 @@ def cmd_set_state(args: argparse.Namespace) -> None:
         print(f"Invalid state type: {state_type}. Must be one of: {STATE_TYPES}", file=sys.stderr)
         sys.exit(1)
 
-    result = api_post(f"/flow_runs/{args.id}/set_state", {
+    full_id = resolve_flow_run_id(args.id)
+    result = api_post(f"/flow_runs/{full_id}/set_state", {
         "state": {"type": state_type, "message": args.message or f"Force-set to {state_type} via prefect_debug.py"},
         "force": args.force,
     })
-    print(f"State set to {state_type} for flow run {args.id}")
+    print(f"State set to {state_type} for flow run {full_id}")
     if result:
         print(f"Result: {json.dumps(result, default=str)}")
 
