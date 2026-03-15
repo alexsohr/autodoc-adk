@@ -62,6 +62,29 @@ class PaginatedWikiResponse(BaseModel):
     limit: int = 20
 
 
+class WikiSectionFull(BaseModel):
+    """A section with full page content embedded."""
+
+    title: str
+    description: str | None = None
+    pages: list[WikiPageResponse] = []
+    subsections: list[WikiSectionFull] = []
+
+
+WikiSectionFull.model_rebuild()
+
+
+class FullWikiResponse(BaseModel):
+    """Complete wiki structure with full page content in sections."""
+
+    title: str | None = None
+    description: str | None = None
+    scope_path: str
+    branch: str
+    commit_sha: str
+    sections: list[WikiSectionFull] = []
+
+
 class SearchResult(BaseModel):
     """A single search result with relevance scoring."""
 

@@ -70,6 +70,8 @@ def _map_text_result(row: TextSearchResult) -> SearchResult:
         title=row.title,
         snippet=_extract_snippet(row.content),
         score=row.score,
+        best_chunk_content=row.best_chunk_content,
+        best_chunk_heading_path=row.best_chunk_heading_path,
         scope_path=row.scope_path,
     )
 

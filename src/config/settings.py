@@ -40,14 +40,24 @@ class Settings(BaseSettings):
 
     # Embedding
     EMBEDDING_MODEL: str = "text-embedding-3-large"
-    EMBEDDING_DIMENSIONS: int = 3072
+    EMBEDDING_DIMENSIONS: int = 1024
     EMBEDDING_BATCH_SIZE: int = 100
+
+    # Contextual enrichment
+    CONTEXT_MODEL: str = ""  # falls back to DEFAULT_MODEL
+    CONTEXT_MAX_TOKENS: int = 100
+    CONTEXT_CONCURRENCY: int = 10
+    CONTEXT_ENABLED: bool = True
 
     # Quality thresholds
     QUALITY_THRESHOLD: float = 7.0
     MAX_AGENT_ATTEMPTS: int = 3
     STRUCTURE_COVERAGE_CRITERION_FLOOR: float = 5.0
     PAGE_ACCURACY_CRITERION_FLOOR: float = 5.0
+    PAGE_GENERATION_CONCURRENCY: int = 3
+
+    # Clone directory (None = system temp directory)
+    CLONE_DIR: str = ""
 
     # Repository size limits
     MAX_REPO_SIZE: int = 524_288_000  # 500MB
@@ -63,6 +73,7 @@ class Settings(BaseSettings):
     SESSION_ARCHIVE_BUCKET: str = ""
 
     # OpenTelemetry
+    OTEL_ENABLED: bool = False
     OTEL_EXPORTER_OTLP_ENDPOINT: str = "http://localhost:4317"
     OTEL_SERVICE_NAME: str = "autodoc-adk"
 

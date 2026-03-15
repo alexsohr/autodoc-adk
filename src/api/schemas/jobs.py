@@ -21,6 +21,33 @@ class JobMode(enum.StrEnum):
 
 
 class CreateJobRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "summary": "Full generation",
+                    "value": {
+                        "repository_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                        "branch": "main",
+                        "force": True,
+                        "dry_run": False,
+                        "callback_url": "https://example.com/webhooks/autodoc",
+                    },
+                },
+                {
+                    "summary": "Incremental dry run",
+                    "value": {
+                        "repository_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                        "branch": None,
+                        "force": False,
+                        "dry_run": True,
+                        "callback_url": None,
+                    },
+                },
+            ]
+        }
+    )
+
     repository_id: UUID
     branch: str | None = None  # defaults to repo's public_branch
     force: bool = False  # forces full mode
@@ -78,7 +105,81 @@ class ConfigWarning(BaseModel):
 
 
 class JobResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "example": {
+                "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+                "repository_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                "status": "COMPLETED",
+                "mode": "full",
+                "branch": "main",
+                "commit_sha": "a3f5b8c1d2e4f6a7b9c0d1e2f3a4b5c6d7e8f9a0",
+                "force": False,
+                "dry_run": False,
+                "quality_report": {
+                    "overall_score": 8.2,
+                    "quality_threshold": 7.0,
+                    "passed": True,
+                    "total_pages": 12,
+                    "pages_below_floor": 0,
+                    "page_scores": [
+                        {
+                            "page_key": "getting-started/installation",
+                            "score": 8.5,
+                            "passed": True,
+                            "attempts": 1,
+                            "below_minimum_floor": False,
+                            "criteria_scores": {
+                                "accuracy": 9.0,
+                                "completeness": 8.0,
+                                "clarity": 8.5,
+                            },
+                        }
+                    ],
+                    "structure_score": {
+                        "score": 8.8,
+                        "passed": True,
+                        "attempts": 1,
+                        "criteria_scores": {
+                            "coverage": 9.0,
+                            "organization": 8.5,
+                        },
+                    },
+                    "readme_score": {
+                        "score": 7.9,
+                        "passed": True,
+                        "attempts": 2,
+                        "criteria_scores": {
+                            "accuracy": 8.0,
+                            "completeness": 7.5,
+                            "clarity": 8.2,
+                        },
+                    },
+                    "regenerated_pages": None,
+                    "no_changes": None,
+                },
+                "token_usage": {
+                    "total_input_tokens": 125000,
+                    "total_output_tokens": 45000,
+                    "total_tokens": 170000,
+                    "by_agent": {
+                        "page_generator": {
+                            "input_tokens": 80000,
+                            "output_tokens": 30000,
+                            "total_tokens": 110000,
+                            "calls": 24,
+                        }
+                    },
+                },
+                "config_warnings": None,
+                "pull_request_url": "https://github.com/acme/backend-api/pull/42",
+                "error_message": None,
+                "created_at": "2026-02-18T10:25:00Z",
+                "updated_at": "2026-02-18T10:35:22Z",
+            }
+        },
+    )
 
     id: UUID
     repository_id: UUID
@@ -98,6 +199,34 @@ class JobResponse(BaseModel):
 
 
 class PaginatedJobResponse(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "items": [
+                    {
+                        "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+                        "repository_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                        "status": "COMPLETED",
+                        "mode": "full",
+                        "branch": "main",
+                        "commit_sha": "a3f5b8c1d2e4f6a7b9c0d1e2f3a4b5c6d7e8f9a0",
+                        "force": False,
+                        "dry_run": False,
+                        "quality_report": None,
+                        "token_usage": None,
+                        "config_warnings": None,
+                        "pull_request_url": None,
+                        "error_message": None,
+                        "created_at": "2026-02-18T10:25:00Z",
+                        "updated_at": "2026-02-18T10:35:22Z",
+                    }
+                ],
+                "next_cursor": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+                "limit": 20,
+            }
+        }
+    )
+
     items: list[JobResponse]
     next_cursor: str | None = None
     limit: int = 20
@@ -123,7 +252,38 @@ WikiSection.model_rebuild()
 
 
 class WikiStructureResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "example": {
+                "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+                "repository_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                "branch": "main",
+                "scope_path": ".",
+                "version": 1,
+                "title": "Backend API Documentation",
+                "description": "Auto-generated documentation for the backend API service.",
+                "sections": [
+                    {
+                        "title": "Getting Started",
+                        "description": "Setup and installation guides.",
+                        "pages": [
+                            {
+                                "page_key": "getting-started/installation",
+                                "title": "Installation Guide",
+                                "description": "Step-by-step installation instructions for local development.",
+                                "importance": "high",
+                                "page_type": "guide",
+                            }
+                        ],
+                        "subsections": [],
+                    }
+                ],
+                "commit_sha": "a3f5b8c1d2e4f6a7b9c0d1e2f3a4b5c6d7e8f9a0",
+                "created_at": "2026-02-18T10:30:00Z",
+            }
+        },
+    )
 
     id: UUID
     repository_id: UUID
@@ -139,6 +299,18 @@ class WikiStructureResponse(BaseModel):
 
 # For GET /jobs/{id}/tasks
 class TaskState(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "task_name": "generate_pages",
+                "state": "Completed",
+                "started_at": "2026-02-18T10:30:00Z",
+                "completed_at": "2026-02-18T10:34:15Z",
+                "message": None,
+            }
+        }
+    )
+
     task_name: str
     state: str
     started_at: datetime | None = None
@@ -148,6 +320,17 @@ class TaskState(BaseModel):
 
 # For GET /jobs/{id}/logs
 class LogEntry(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "timestamp": "2026-02-18T10:35:22Z",
+                "level": "INFO",
+                "message": "Generated 12 pages for scope '.'",
+                "task_name": None,
+            }
+        }
+    )
+
     timestamp: datetime
     level: str
     message: str

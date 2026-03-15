@@ -14,13 +14,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.agents.common.agent_result import AgentResult, TokenUsage
-from src.agents.page_generator.schemas import GeneratedPage
-from src.agents.readme_distiller.schemas import ReadmeOutput
-from src.agents.structure_extractor.schemas import (
-    PageSpec,
-    SectionSpec,
-    WikiStructureSpec,
+from src.agents.structure_extractor.schemas import PageSpec
+from src.flows.schemas import (
+    PageTaskResult,
+    ReadmeTaskResult,
+    ScopeProcessingResult,
+    StructureTaskResult,
+    TokenUsageResult,
 )
 from src.services.config_loader import AutodocConfig
 
@@ -144,87 +144,64 @@ def _make_wiki_page(
 
 def _make_structure_result(
     below_floor: bool = False,
-) -> AgentResult[WikiStructureSpec]:
-    """Create a fake AgentResult for structure extraction."""
-    return AgentResult(
-        output=WikiStructureSpec(
-            title="Test Project",
-            description="Test project documentation",
-            sections=[
-                SectionSpec(
-                    title="Core",
-                    description="Core module docs",
-                    pages=[
-                        PageSpec(
-                            page_key="core-overview",
-                            title="Core Overview",
-                            description="Overview of core module",
-                            importance="high",
-                            page_type="overview",
-                            source_files=["src/core.py"],
-                            related_pages=[],
-                        ),
-                    ],
-                    subsections=[],
-                ),
-            ],
-        ),
-        attempts=1,
+) -> StructureTaskResult:
+    """Create a fake StructureTaskResult for structure extraction."""
+    return StructureTaskResult(
         final_score=8.5,
         passed_quality_gate=True,
         below_minimum_floor=below_floor,
-        evaluation_history=[],
-        token_usage=TokenUsage(
-            input_tokens=1000,
-            output_tokens=500,
-            total_tokens=1500,
-            calls=2,
+        attempts=1,
+        token_usage=TokenUsageResult(
+            input_tokens=1000, output_tokens=500, total_tokens=1500, calls=2,
         ),
+        output_title="Test Project",
+        output_description="Test project documentation",
+        sections_json=[{
+            "title": "Core",
+            "description": "Core module docs",
+            "pages": [{
+                "page_key": "core-overview",
+                "title": "Core Overview",
+                "description": "Overview of core module",
+                "importance": "high",
+                "page_type": "overview",
+                "source_files": ["src/core.py"],
+                "related_pages": [],
+            }],
+            "subsections": [],
+        }],
     )
 
 
 def _make_page_result(
     page_key: str = "core-overview",
     below_floor: bool = False,
-) -> AgentResult[GeneratedPage]:
-    """Create a fake AgentResult for page generation."""
-    return AgentResult(
-        output=GeneratedPage(
-            page_key=page_key,
-            title="Core Overview",
-            content="# Core Overview\n\nThis is the core module.",
-            source_files=["src/core.py"],
-        ),
-        attempts=1,
+) -> PageTaskResult:
+    """Create a fake PageTaskResult for page generation."""
+    return PageTaskResult(
+        page_key=page_key,
         final_score=8.0,
         passed_quality_gate=True,
         below_minimum_floor=below_floor,
-        evaluation_history=[],
-        token_usage=TokenUsage(
-            input_tokens=800,
-            output_tokens=400,
-            total_tokens=1200,
-            calls=2,
+        attempts=1,
+        token_usage=TokenUsageResult(
+            input_tokens=800, output_tokens=400, total_tokens=1200, calls=2,
         ),
     )
 
 
 def _make_readme_result(
     below_floor: bool = False,
-) -> AgentResult[ReadmeOutput]:
-    """Create a fake AgentResult for README distillation."""
-    return AgentResult(
-        output=ReadmeOutput(content="# Test Project\n\nA great project."),
-        attempts=1,
+) -> ReadmeTaskResult:
+    """Create a fake ReadmeTaskResult for README distillation."""
+    return ReadmeTaskResult(
         final_score=8.0,
         passed_quality_gate=True,
         below_minimum_floor=below_floor,
-        evaluation_history=[],
-        token_usage=TokenUsage(
-            input_tokens=600,
-            output_tokens=300,
-            total_tokens=900,
-            calls=2,
+        attempts=1,
+        content="# Test Project\n\nA great project.",
+        token_usage=TokenUsageResult(
+            input_tokens=600, output_tokens=300, total_tokens=900, calls=2,
         ),
     )
 
@@ -306,26 +283,23 @@ class TestFullGenerationHappyPath:
         wiki_structure = _make_wiki_structure()
         wiki_pages = [_make_wiki_page(structure_id=wiki_structure.id)]
 
-        session_factory, mock_job_repo, mock_repo_repo, mock_wiki_repo, _mock_session = (
+        session_factory, mock_job_repo, mock_repo_repo, _mock_wiki_repo, _mock_session = (
             _build_mock_session_factory(job, repository, wiki_structure, wiki_pages)
         )
 
-        structure_result = _make_structure_result()
-        page_results = [_make_page_result()]
-        readme_result = _make_readme_result()
-        scope_result = {
-            "structure_result": structure_result,
-            "page_results": page_results,
-            "readme_result": readme_result,
-            "wiki_structure_id": wiki_structure.id,
-            "embedding_count": 5,
-        }
+        scope_result = ScopeProcessingResult(
+            structure_result=_make_structure_result(),
+            page_results=[_make_page_result()],
+            readme_result=_make_readme_result(),
+            wiki_structure_id=wiki_structure.id,
+            embedding_count=5,
+        )
 
         with (
             patch("src.flows.full_generation.get_session_factory", return_value=session_factory),
             patch("src.flows.full_generation.JobRepo", return_value=mock_job_repo),
             patch("src.flows.full_generation.RepositoryRepo", return_value=mock_repo_repo),
-            patch("src.flows.full_generation.WikiRepo", return_value=mock_wiki_repo),
+
             patch(
                 "src.flows.full_generation.clone_repository",
                 new_callable=AsyncMock,
@@ -356,14 +330,6 @@ class TestFullGenerationHappyPath:
                 new_callable=AsyncMock,
                 return_value={"overall_score": 8.0},
             ) as mock_metrics,
-            patch(
-                "src.flows.full_generation.archive_sessions",
-                new_callable=AsyncMock,
-            ),
-            patch(
-                "src.flows.full_generation.delete_sessions",
-                new_callable=AsyncMock,
-            ),
             patch(
                 "src.flows.full_generation.cleanup_workspace",
                 new_callable=AsyncMock,
@@ -409,25 +375,24 @@ class TestFullGenerationDryRun:
         job = _make_job(dry_run=True)
         wiki_structure = _make_wiki_structure()
 
-        session_factory, mock_job_repo, mock_repo_repo, mock_wiki_repo, _mock_session = (
+        session_factory, mock_job_repo, mock_repo_repo, _mock_wiki_repo, _mock_session = (
             _build_mock_session_factory(job, repository, wiki_structure)
         )
 
         # Scope processing returns structure only (dry_run skips pages/readme)
-        structure_result = _make_structure_result()
-        scope_result = {
-            "structure_result": structure_result,
-            "page_results": [],
-            "readme_result": None,
-            "wiki_structure_id": wiki_structure.id,
-            "embedding_count": 0,
-        }
+        scope_result = ScopeProcessingResult(
+            structure_result=_make_structure_result(),
+            page_results=[],
+            readme_result=None,
+            wiki_structure_id=wiki_structure.id,
+            embedding_count=0,
+        )
 
         with (
             patch("src.flows.full_generation.get_session_factory", return_value=session_factory),
             patch("src.flows.full_generation.JobRepo", return_value=mock_job_repo),
             patch("src.flows.full_generation.RepositoryRepo", return_value=mock_repo_repo),
-            patch("src.flows.full_generation.WikiRepo", return_value=mock_wiki_repo),
+
             patch(
                 "src.flows.full_generation.clone_repository",
                 new_callable=AsyncMock,
@@ -457,14 +422,6 @@ class TestFullGenerationDryRun:
                 return_value={"overall_score": 8.5},
             ),
             patch(
-                "src.flows.full_generation.archive_sessions",
-                new_callable=AsyncMock,
-            ) as mock_archive,
-            patch(
-                "src.flows.full_generation.delete_sessions",
-                new_callable=AsyncMock,
-            ) as mock_delete_sessions,
-            patch(
                 "src.flows.full_generation.cleanup_workspace",
                 new_callable=AsyncMock,
             ),
@@ -486,9 +443,6 @@ class TestFullGenerationDryRun:
         mock_create_pr.assert_not_awaited()
         # close_stale_autodoc_prs is also skipped because scope_readmes is empty
         mock_close_prs.assert_not_awaited()
-        # Session archival should be skipped
-        mock_archive.assert_not_awaited()
-        mock_delete_sessions.assert_not_awaited()
 
         # Job should still reach COMPLETED
         final_call = mock_job_repo.update_status.call_args_list[-1]
@@ -504,7 +458,7 @@ class TestFullGenerationErrorHandling:
         repository = _make_repository()
         job = _make_job()
 
-        session_factory, mock_job_repo, mock_repo_repo, mock_wiki_repo, _mock_session = (
+        session_factory, mock_job_repo, mock_repo_repo, _mock_wiki_repo, _mock_session = (
             _build_mock_session_factory(job, repository)
         )
 
@@ -512,7 +466,7 @@ class TestFullGenerationErrorHandling:
             patch("src.flows.full_generation.get_session_factory", return_value=session_factory),
             patch("src.flows.full_generation.JobRepo", return_value=mock_job_repo),
             patch("src.flows.full_generation.RepositoryRepo", return_value=mock_repo_repo),
-            patch("src.flows.full_generation.WikiRepo", return_value=mock_wiki_repo),
+
             patch(
                 "src.flows.full_generation.clone_repository",
                 new_callable=AsyncMock,
@@ -556,25 +510,24 @@ class TestFullGenerationErrorHandling:
         job = _make_job()
         wiki_structure = _make_wiki_structure()
 
-        session_factory, mock_job_repo, mock_repo_repo, mock_wiki_repo, _mock_session = (
+        session_factory, mock_job_repo, mock_repo_repo, _mock_wiki_repo, _mock_session = (
             _build_mock_session_factory(job, repository, wiki_structure)
         )
 
         # Structure result with below_minimum_floor=True
-        structure_result = _make_structure_result(below_floor=True)
-        scope_result = {
-            "structure_result": structure_result,
-            "page_results": [],
-            "readme_result": None,
-            "wiki_structure_id": wiki_structure.id,
-            "embedding_count": 0,
-        }
+        scope_result = ScopeProcessingResult(
+            structure_result=_make_structure_result(below_floor=True),
+            page_results=[],
+            readme_result=None,
+            wiki_structure_id=wiki_structure.id,
+            embedding_count=0,
+        )
 
         with (
             patch("src.flows.full_generation.get_session_factory", return_value=session_factory),
             patch("src.flows.full_generation.JobRepo", return_value=mock_job_repo),
             patch("src.flows.full_generation.RepositoryRepo", return_value=mock_repo_repo),
-            patch("src.flows.full_generation.WikiRepo", return_value=mock_wiki_repo),
+
             patch(
                 "src.flows.full_generation.clone_repository",
                 new_callable=AsyncMock,
@@ -626,6 +579,141 @@ class TestFullGenerationErrorHandling:
         mock_cleanup.assert_awaited_once_with(repo_path=REPO_PATH)
 
 
+    async def test_all_scopes_fail_marks_job_failed(self, prefect_harness):
+        """When every scope raises an exception, the job is marked FAILED."""
+        repository = _make_repository()
+        job = _make_job()
+
+        session_factory, mock_job_repo, mock_repo_repo, _mock_wiki_repo, _mock_session = (
+            _build_mock_session_factory(job, repository)
+        )
+
+        configs = [
+            _make_config(scope_path="."),
+            _make_config(scope_path="packages/auth"),
+        ]
+
+        with (
+            patch("src.flows.full_generation.get_session_factory", return_value=session_factory),
+            patch("src.flows.full_generation.JobRepo", return_value=mock_job_repo),
+            patch("src.flows.full_generation.RepositoryRepo", return_value=mock_repo_repo),
+
+            patch(
+                "src.flows.full_generation.clone_repository",
+                new_callable=AsyncMock,
+                return_value=(REPO_PATH, COMMIT_SHA),
+            ),
+            patch(
+                "src.flows.full_generation.discover_autodoc_configs",
+                new_callable=AsyncMock,
+                return_value=configs,
+            ),
+            patch(
+                "src.flows.full_generation.scope_processing_flow",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("Scope processing crashed"),
+            ),
+            patch(
+                "src.flows.full_generation.aggregate_job_metrics",
+                new_callable=AsyncMock,
+            ) as mock_metrics,
+            patch(
+                "src.flows.full_generation.cleanup_workspace",
+                new_callable=AsyncMock,
+            ) as mock_cleanup,
+            patch(
+                "src.flows.full_generation.deliver_callback",
+                new_callable=AsyncMock,
+            ),
+        ):
+            from src.flows.full_generation import full_generation_flow
+
+            await full_generation_flow(
+                repository_id=REPO_ID,
+                job_id=JOB_ID,
+                branch=BRANCH,
+                dry_run=False,
+            )
+
+        # Job should be marked FAILED
+        failed_calls = [
+            c for c in mock_job_repo.update_status.call_args_list
+            if len(c.args) >= 2 and c.args[1] == "FAILED"
+        ]
+        assert len(failed_calls) >= 1
+        error_msg = failed_calls[0].kwargs.get("error_message", "")
+        assert "All 2 scope(s) failed" in error_msg
+
+        # aggregate_job_metrics should NOT have been called (flow short-circuited)
+        mock_metrics.assert_not_awaited()
+
+        # Cleanup should still run
+        mock_cleanup.assert_awaited_once_with(repo_path=REPO_PATH)
+
+    async def test_single_scope_fail_marks_job_failed(self, prefect_harness):
+        """When the only scope raises an exception, the job is marked FAILED."""
+        repository = _make_repository()
+        job = _make_job()
+
+        session_factory, mock_job_repo, mock_repo_repo, _mock_wiki_repo, _mock_session = (
+            _build_mock_session_factory(job, repository)
+        )
+
+        with (
+            patch("src.flows.full_generation.get_session_factory", return_value=session_factory),
+            patch("src.flows.full_generation.JobRepo", return_value=mock_job_repo),
+            patch("src.flows.full_generation.RepositoryRepo", return_value=mock_repo_repo),
+
+            patch(
+                "src.flows.full_generation.clone_repository",
+                new_callable=AsyncMock,
+                return_value=(REPO_PATH, COMMIT_SHA),
+            ),
+            patch(
+                "src.flows.full_generation.discover_autodoc_configs",
+                new_callable=AsyncMock,
+                return_value=[_make_config()],
+            ),
+            patch(
+                "src.flows.full_generation.scope_processing_flow",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("LLM API unavailable"),
+            ),
+            patch(
+                "src.flows.full_generation.aggregate_job_metrics",
+                new_callable=AsyncMock,
+            ) as mock_metrics,
+            patch(
+                "src.flows.full_generation.cleanup_workspace",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.flows.full_generation.deliver_callback",
+                new_callable=AsyncMock,
+            ),
+        ):
+            from src.flows.full_generation import full_generation_flow
+
+            await full_generation_flow(
+                repository_id=REPO_ID,
+                job_id=JOB_ID,
+                branch=BRANCH,
+                dry_run=False,
+            )
+
+        # Job should be marked FAILED
+        failed_calls = [
+            c for c in mock_job_repo.update_status.call_args_list
+            if len(c.args) >= 2 and c.args[1] == "FAILED"
+        ]
+        assert len(failed_calls) >= 1
+        error_msg = failed_calls[0].kwargs.get("error_message", "")
+        assert "All 1 scope(s) failed" in error_msg
+
+        # Metrics should not run when all scopes fail
+        mock_metrics.assert_not_awaited()
+
+
 @pytest.mark.integration
 class TestFullGenerationCallbackDelivery:
     """Callback delivery on completion and failure."""
@@ -638,23 +726,23 @@ class TestFullGenerationCallbackDelivery:
         wiki_structure = _make_wiki_structure()
         wiki_pages = [_make_wiki_page(structure_id=wiki_structure.id)]
 
-        session_factory, mock_job_repo, mock_repo_repo, mock_wiki_repo, _mock_session = (
+        session_factory, mock_job_repo, mock_repo_repo, _mock_wiki_repo, _mock_session = (
             _build_mock_session_factory(job, repository, wiki_structure, wiki_pages)
         )
 
-        scope_result = {
-            "structure_result": _make_structure_result(),
-            "page_results": [_make_page_result()],
-            "readme_result": _make_readme_result(),
-            "wiki_structure_id": wiki_structure.id,
-            "embedding_count": 5,
-        }
+        scope_result = ScopeProcessingResult(
+            structure_result=_make_structure_result(),
+            page_results=[_make_page_result()],
+            readme_result=_make_readme_result(),
+            wiki_structure_id=wiki_structure.id,
+            embedding_count=5,
+        )
 
         with (
             patch("src.flows.full_generation.get_session_factory", return_value=session_factory),
             patch("src.flows.full_generation.JobRepo", return_value=mock_job_repo),
             patch("src.flows.full_generation.RepositoryRepo", return_value=mock_repo_repo),
-            patch("src.flows.full_generation.WikiRepo", return_value=mock_wiki_repo),
+
             patch(
                 "src.flows.full_generation.clone_repository",
                 new_callable=AsyncMock,
@@ -684,14 +772,6 @@ class TestFullGenerationCallbackDelivery:
                 "src.flows.full_generation.aggregate_job_metrics",
                 new_callable=AsyncMock,
                 return_value={"overall_score": 8.0},
-            ),
-            patch(
-                "src.flows.full_generation.archive_sessions",
-                new_callable=AsyncMock,
-            ),
-            patch(
-                "src.flows.full_generation.delete_sessions",
-                new_callable=AsyncMock,
             ),
             patch(
                 "src.flows.full_generation.cleanup_workspace",
@@ -726,7 +806,7 @@ class TestFullGenerationCallbackDelivery:
         repository = _make_repository()
         job = _make_job(callback_url=callback_url)
 
-        session_factory, mock_job_repo, mock_repo_repo, mock_wiki_repo, _mock_session = (
+        session_factory, mock_job_repo, mock_repo_repo, _mock_wiki_repo, _mock_session = (
             _build_mock_session_factory(job, repository)
         )
 
@@ -734,7 +814,7 @@ class TestFullGenerationCallbackDelivery:
             patch("src.flows.full_generation.get_session_factory", return_value=session_factory),
             patch("src.flows.full_generation.JobRepo", return_value=mock_job_repo),
             patch("src.flows.full_generation.RepositoryRepo", return_value=mock_repo_repo),
-            patch("src.flows.full_generation.WikiRepo", return_value=mock_wiki_repo),
+
             patch(
                 "src.flows.full_generation.clone_repository",
                 new_callable=AsyncMock,
@@ -770,23 +850,23 @@ class TestFullGenerationCallbackDelivery:
         job = _make_job(callback_url=None)
         wiki_structure = _make_wiki_structure()
 
-        session_factory, mock_job_repo, mock_repo_repo, mock_wiki_repo, _mock_session = (
+        session_factory, mock_job_repo, mock_repo_repo, _mock_wiki_repo, _mock_session = (
             _build_mock_session_factory(job, repository, wiki_structure)
         )
 
-        scope_result = {
-            "structure_result": _make_structure_result(),
-            "page_results": [],
-            "readme_result": None,
-            "wiki_structure_id": wiki_structure.id,
-            "embedding_count": 0,
-        }
+        scope_result = ScopeProcessingResult(
+            structure_result=_make_structure_result(),
+            page_results=[],
+            readme_result=None,
+            wiki_structure_id=wiki_structure.id,
+            embedding_count=0,
+        )
 
         with (
             patch("src.flows.full_generation.get_session_factory", return_value=session_factory),
             patch("src.flows.full_generation.JobRepo", return_value=mock_job_repo),
             patch("src.flows.full_generation.RepositoryRepo", return_value=mock_repo_repo),
-            patch("src.flows.full_generation.WikiRepo", return_value=mock_wiki_repo),
+
             patch(
                 "src.flows.full_generation.clone_repository",
                 new_callable=AsyncMock,
@@ -976,20 +1056,13 @@ class TestIncrementalWithChanges:
             return_value=["src/core.py", "src/utils.py"],
         )
 
-        # _process_incremental_scope is called internally, so we mock
-        # the helper functions it depends on
-        readme_result = _make_readme_result()
-        page_result = _make_page_result()
-
-        # Mock _process_incremental_scope indirectly by mocking the
-        # functions it calls. Since _process_incremental_scope is defined in
-        # the same module, we patch it directly.
-        incremental_scope_result = {
-            "structure_result": None,
-            "page_results": [page_result],
-            "readme_result": readme_result,
-            "regenerated_page_keys": ["core-overview"],
-        }
+        # Mock _process_incremental_scope directly, returning a ScopeProcessingResult.
+        incremental_scope_result = ScopeProcessingResult(
+            structure_result=None,
+            page_results=[_make_page_result()],
+            readme_result=_make_readme_result(),
+            regenerated_page_keys=["core-overview"],
+        )
 
         with (
             patch("src.flows.incremental_update.get_session_factory", return_value=session_factory),
@@ -1081,12 +1154,12 @@ class TestIncrementalWithChanges:
             return_value=["src/__init__.py", "src/new_module.py"],
         )
 
-        incremental_scope_result = {
-            "structure_result": _make_structure_result(),
-            "page_results": [],
-            "readme_result": _make_readme_result(),
-            "regenerated_page_keys": [],
-        }
+        incremental_scope_result = ScopeProcessingResult(
+            structure_result=_make_structure_result(),
+            page_results=[],
+            readme_result=_make_readme_result(),
+            regenerated_page_keys=[],
+        )
 
         with (
             patch("src.flows.incremental_update.get_session_factory", return_value=session_factory),
@@ -1169,12 +1242,12 @@ class TestIncrementalDryRun:
             return_value=["src/core.py"],
         )
 
-        incremental_scope_result = {
-            "structure_result": None,
-            "page_results": [],
-            "readme_result": None,
-            "regenerated_page_keys": [],
-        }
+        incremental_scope_result = ScopeProcessingResult(
+            structure_result=None,
+            page_results=[],
+            readme_result=None,
+            regenerated_page_keys=[],
+        )
 
         with (
             patch("src.flows.incremental_update.get_session_factory", return_value=session_factory),
@@ -1214,14 +1287,6 @@ class TestIncrementalDryRun:
                 return_value={"overall_score": 8.0},
             ),
             patch(
-                "src.flows.incremental_update.archive_sessions",
-                new_callable=AsyncMock,
-            ) as mock_archive,
-            patch(
-                "src.flows.incremental_update.delete_sessions",
-                new_callable=AsyncMock,
-            ) as mock_delete_sessions,
-            patch(
                 "src.flows.incremental_update.cleanup_workspace",
                 new_callable=AsyncMock,
             ),
@@ -1242,9 +1307,6 @@ class TestIncrementalDryRun:
         # PR should be skipped (no readme results -> no scope_readmes)
         mock_create_pr.assert_not_awaited()
         mock_close_prs.assert_not_awaited()
-        # Session archival should be skipped
-        mock_archive.assert_not_awaited()
-        mock_delete_sessions.assert_not_awaited()
 
 
 @pytest.mark.integration
@@ -1351,6 +1413,82 @@ class TestIncrementalErrorHandling:
         assert "Provider API error" in error_msg
 
         # Cleanup should still run (repo was cloned before failure)
+        mock_cleanup.assert_awaited_once_with(repo_path=REPO_PATH)
+
+    async def test_all_scopes_fail_marks_job_failed(self, prefect_harness):
+        """When every scope raises an exception during incremental update, job is FAILED."""
+        repository = _make_repository()
+        job = _make_job(mode="incremental")
+        wiki_structure = _make_wiki_structure()
+
+        session_factory, mock_job_repo, mock_repo_repo, mock_wiki_repo, _mock_session = (
+            _build_mock_session_factory(job, repository, wiki_structure)
+        )
+
+        mock_provider = AsyncMock()
+        mock_provider.compare_commits = AsyncMock(
+            return_value=["src/core.py"],
+        )
+
+        with (
+            patch("src.flows.incremental_update.get_session_factory", return_value=session_factory),
+            patch("src.flows.incremental_update.JobRepo", return_value=mock_job_repo),
+            patch("src.flows.incremental_update.RepositoryRepo", return_value=mock_repo_repo),
+            patch("src.flows.incremental_update.WikiRepo", return_value=mock_wiki_repo),
+            patch(
+                "src.flows.incremental_update.clone_repository",
+                new_callable=AsyncMock,
+                return_value=(REPO_PATH, COMMIT_SHA),
+            ),
+            patch(
+                "src.flows.incremental_update.get_provider",
+                return_value=mock_provider,
+            ),
+            patch(
+                "src.flows.incremental_update.discover_autodoc_configs",
+                new_callable=AsyncMock,
+                return_value=[_make_config()],
+            ),
+            patch(
+                "src.flows.incremental_update._process_incremental_scope",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("Scope processing crashed"),
+            ),
+            patch(
+                "src.flows.incremental_update.aggregate_job_metrics",
+                new_callable=AsyncMock,
+            ) as mock_metrics,
+            patch(
+                "src.flows.incremental_update.cleanup_workspace",
+                new_callable=AsyncMock,
+            ) as mock_cleanup,
+            patch(
+                "src.flows.incremental_update.deliver_callback",
+                new_callable=AsyncMock,
+            ),
+        ):
+            from src.flows.incremental_update import incremental_update_flow
+
+            await incremental_update_flow(
+                repository_id=REPO_ID,
+                job_id=JOB_ID,
+                branch=BRANCH,
+                dry_run=False,
+            )
+
+        # Job should be marked FAILED
+        failed_calls = [
+            c for c in mock_job_repo.update_status.call_args_list
+            if len(c.args) >= 2 and c.args[1] == "FAILED"
+        ]
+        assert len(failed_calls) >= 1
+        error_msg = failed_calls[0].kwargs.get("error_message", "")
+        assert "All 1 scope(s) failed" in error_msg
+
+        # Metrics should not run when all scopes fail
+        mock_metrics.assert_not_awaited()
+
+        # Cleanup should still run
         mock_cleanup.assert_awaited_once_with(repo_path=REPO_PATH)
 
 
@@ -1503,7 +1641,7 @@ class TestCleanupAlwaysRuns:
         repository = _make_repository()
         job = _make_job()
 
-        session_factory, mock_job_repo, mock_repo_repo, mock_wiki_repo, _mock_session = (
+        session_factory, mock_job_repo, mock_repo_repo, _mock_wiki_repo, _mock_session = (
             _build_mock_session_factory(job, repository)
         )
 
@@ -1511,7 +1649,7 @@ class TestCleanupAlwaysRuns:
             patch("src.flows.full_generation.get_session_factory", return_value=session_factory),
             patch("src.flows.full_generation.JobRepo", return_value=mock_job_repo),
             patch("src.flows.full_generation.RepositoryRepo", return_value=mock_repo_repo),
-            patch("src.flows.full_generation.WikiRepo", return_value=mock_wiki_repo),
+
             patch(
                 "src.flows.full_generation.clone_repository",
                 new_callable=AsyncMock,
@@ -1608,7 +1746,7 @@ class TestMultipleScopeProcessing:
         job = _make_job()
         wiki_structure = _make_wiki_structure()
 
-        session_factory, mock_job_repo, mock_repo_repo, mock_wiki_repo, _mock_session = (
+        session_factory, mock_job_repo, mock_repo_repo, _mock_wiki_repo, _mock_session = (
             _build_mock_session_factory(job, repository, wiki_structure)
         )
 
@@ -1617,20 +1755,20 @@ class TestMultipleScopeProcessing:
             _make_config(scope_path="packages/auth"),
         ]
 
-        scope_result_root = {
-            "structure_result": _make_structure_result(),
-            "page_results": [_make_page_result("root-overview")],
-            "readme_result": _make_readme_result(),
-            "wiki_structure_id": uuid.uuid4(),
-            "embedding_count": 3,
-        }
-        scope_result_auth = {
-            "structure_result": _make_structure_result(),
-            "page_results": [_make_page_result("auth-overview")],
-            "readme_result": _make_readme_result(),
-            "wiki_structure_id": uuid.uuid4(),
-            "embedding_count": 2,
-        }
+        scope_result_root = ScopeProcessingResult(
+            structure_result=_make_structure_result(),
+            page_results=[_make_page_result("root-overview")],
+            readme_result=_make_readme_result(),
+            wiki_structure_id=uuid.uuid4(),
+            embedding_count=3,
+        )
+        scope_result_auth = ScopeProcessingResult(
+            structure_result=_make_structure_result(),
+            page_results=[_make_page_result("auth-overview")],
+            readme_result=_make_readme_result(),
+            wiki_structure_id=uuid.uuid4(),
+            embedding_count=2,
+        )
 
         call_count = 0
 
@@ -1644,7 +1782,7 @@ class TestMultipleScopeProcessing:
             patch("src.flows.full_generation.get_session_factory", return_value=session_factory),
             patch("src.flows.full_generation.JobRepo", return_value=mock_job_repo),
             patch("src.flows.full_generation.RepositoryRepo", return_value=mock_repo_repo),
-            patch("src.flows.full_generation.WikiRepo", return_value=mock_wiki_repo),
+
             patch(
                 "src.flows.full_generation.clone_repository",
                 new_callable=AsyncMock,
@@ -1712,7 +1850,7 @@ class TestMultipleScopeProcessing:
         job = _make_job()
         wiki_structure = _make_wiki_structure()
 
-        session_factory, mock_job_repo, mock_repo_repo, mock_wiki_repo, _mock_session = (
+        session_factory, mock_job_repo, mock_repo_repo, _mock_wiki_repo, _mock_session = (
             _build_mock_session_factory(job, repository, wiki_structure)
         )
 
@@ -1721,13 +1859,13 @@ class TestMultipleScopeProcessing:
             _make_config(scope_path="packages/broken"),
         ]
 
-        scope_result_ok = {
-            "structure_result": _make_structure_result(),
-            "page_results": [_make_page_result()],
-            "readme_result": _make_readme_result(),
-            "wiki_structure_id": uuid.uuid4(),
-            "embedding_count": 3,
-        }
+        scope_result_ok = ScopeProcessingResult(
+            structure_result=_make_structure_result(),
+            page_results=[_make_page_result()],
+            readme_result=_make_readme_result(),
+            wiki_structure_id=uuid.uuid4(),
+            embedding_count=3,
+        )
 
         call_count = 0
 
@@ -1742,7 +1880,7 @@ class TestMultipleScopeProcessing:
             patch("src.flows.full_generation.get_session_factory", return_value=session_factory),
             patch("src.flows.full_generation.JobRepo", return_value=mock_job_repo),
             patch("src.flows.full_generation.RepositoryRepo", return_value=mock_repo_repo),
-            patch("src.flows.full_generation.WikiRepo", return_value=mock_wiki_repo),
+
             patch(
                 "src.flows.full_generation.clone_repository",
                 new_callable=AsyncMock,

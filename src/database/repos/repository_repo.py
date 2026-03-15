@@ -39,6 +39,7 @@ class RepositoryRepo:
         )
         self._session.add(repo)
         await self._session.flush()
+        await self._session.refresh(repo)
         return repo
 
     async def get_by_id(self, repository_id: uuid.UUID) -> Repository | None:
@@ -88,6 +89,7 @@ class RepositoryRepo:
         for key, value in kwargs.items():
             setattr(repo, key, value)
         await self._session.flush()
+        await self._session.refresh(repo)
         return repo
 
     async def delete(self, repository_id: uuid.UUID) -> bool:

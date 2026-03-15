@@ -62,7 +62,7 @@ async def delete_sessions(
     Uses ADK ``DatabaseSessionService`` to delete sessions.
     """
     settings = get_settings()
-    db_url = settings.DATABASE_URL.replace("+asyncpg", "")
+    db_url = settings.DATABASE_URL
 
     from google.adk.sessions import DatabaseSessionService
 

@@ -5,9 +5,8 @@ import uuid
 
 from prefect import task
 
-from src.agents.common.agent_result import AgentResult, TokenUsage
 from src.config.settings import get_settings
-from src.database.repos.job_repo import JobRepo
+from src.flows.schemas import PageTaskResult, ReadmeTaskResult, StructureTaskResult
 
 logger = logging.getLogger(__name__)
 
@@ -16,68 +15,76 @@ logger = logging.getLogger(__name__)
 async def aggregate_job_metrics(
     *,
     job_id: uuid.UUID,
-    structure_result: AgentResult | None,
-    page_results: list[AgentResult],
-    readme_result: AgentResult | None,
-    job_repo: JobRepo,
+    structure_result: StructureTaskResult | None,
+    page_results: list[PageTaskResult],
+    readme_result: ReadmeTaskResult | None,
 ) -> dict:
     """Collect token usage and quality scores from all agent results.
 
     Builds ``quality_report`` and ``token_usage`` JSONB objects, updates
-    the job record.
+    the job record via its own DB session.
 
     Returns the quality_report dict.
     """
     settings = get_settings()
 
-    # Build token usage
-    total_usage = TokenUsage()
+    # Build token usage with simple integer tracking
+    total_input = 0
+    total_output = 0
+    total_tokens = 0
+    total_calls = 0
     by_agent: dict[str, dict] = {}
 
     if structure_result:
-        total_usage.add(structure_result.token_usage)
-        by_agent["structure_extractor"] = {
-            "input_tokens": structure_result.token_usage.input_tokens,
-            "output_tokens": structure_result.token_usage.output_tokens,
-            "total_tokens": structure_result.token_usage.total_tokens,
-            "calls": structure_result.token_usage.calls,
-        }
+        tu = structure_result.token_usage
+        total_input += tu.input_tokens
+        total_output += tu.output_tokens
+        total_tokens += tu.total_tokens
+        total_calls += tu.calls
+        by_agent["structure_extractor"] = tu.model_dump()
 
-    page_total = TokenUsage()
+    page_input = 0
+    page_output = 0
+    page_tokens = 0
+    page_calls = 0
     page_scores: list[dict] = []
     pages_below_floor = 0
 
     for pr in page_results:
-        page_total.add(pr.token_usage)
-        total_usage.add(pr.token_usage)
-        if pr.output is not None:
-            page_scores.append(
-                {
-                    "page_key": pr.output.page_key,
-                    "score": pr.final_score,
-                    "passed": pr.passed_quality_gate,
-                    "attempts": pr.attempts,
-                    "below_minimum_floor": pr.below_minimum_floor,
-                }
-            )
-            if pr.below_minimum_floor:
-                pages_below_floor += 1
+        page_input += pr.token_usage.input_tokens
+        page_output += pr.token_usage.output_tokens
+        page_tokens += pr.token_usage.total_tokens
+        page_calls += pr.token_usage.calls
+        page_scores.append(
+            {
+                "page_key": pr.page_key,
+                "score": pr.final_score,
+                "passed": pr.passed_quality_gate,
+                "attempts": pr.attempts,
+                "below_minimum_floor": pr.below_minimum_floor,
+            }
+        )
+        if pr.below_minimum_floor:
+            pages_below_floor += 1
 
+    total_input += page_input
+    total_output += page_output
+    total_tokens += page_tokens
+    total_calls += page_calls
     by_agent["page_generator"] = {
-        "input_tokens": page_total.input_tokens,
-        "output_tokens": page_total.output_tokens,
-        "total_tokens": page_total.total_tokens,
-        "calls": page_total.calls,
+        "input_tokens": page_input,
+        "output_tokens": page_output,
+        "total_tokens": page_tokens,
+        "calls": page_calls,
     }
 
     if readme_result:
-        total_usage.add(readme_result.token_usage)
-        by_agent["readme_distiller"] = {
-            "input_tokens": readme_result.token_usage.input_tokens,
-            "output_tokens": readme_result.token_usage.output_tokens,
-            "total_tokens": readme_result.token_usage.total_tokens,
-            "calls": readme_result.token_usage.calls,
-        }
+        tu = readme_result.token_usage
+        total_input += tu.input_tokens
+        total_output += tu.output_tokens
+        total_tokens += tu.total_tokens
+        total_calls += tu.calls
+        by_agent["readme_distiller"] = tu.model_dump()
 
     # Compute overall score (average across all results)
     all_scores: list[float] = []
@@ -114,23 +121,31 @@ async def aggregate_job_metrics(
     }
 
     token_usage_report: dict = {
-        "total_input_tokens": total_usage.input_tokens,
-        "total_output_tokens": total_usage.output_tokens,
-        "total_tokens": total_usage.total_tokens,
+        "total_input_tokens": total_input,
+        "total_output_tokens": total_output,
+        "total_tokens": total_tokens,
         "by_agent": by_agent,
     }
 
-    # Update job record (set JSONB fields without status transition)
-    job = await job_repo.get_by_id(job_id)
-    if job is not None:
-        job.quality_report = quality_report
-        job.token_usage = token_usage_report
+    # Update job record via own DB session
+    from src.database.engine import get_session_factory
+    from src.database.repos.job_repo import JobRepo
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        job_repo = JobRepo(session)
+        job = await job_repo.get_by_id(job_id)
+        if job is not None:
+            job.quality_report = quality_report
+            job.token_usage = token_usage_report
+            await session.flush()
+        await session.commit()
 
     logger.info(
         "Aggregated metrics: overall=%.2f, pages=%d, tokens=%d",
         overall_score,
         len(page_results),
-        total_usage.total_tokens,
+        total_tokens,
     )
 
     return quality_report

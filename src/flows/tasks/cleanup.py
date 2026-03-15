@@ -8,6 +8,8 @@ from pathlib import Path
 
 from prefect import flow, task
 
+from src.config.settings import get_settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -43,7 +45,8 @@ async def cleanup_orphan_workspaces() -> None:
     environments; in K8s production, ephemeral pod volumes handle cleanup
     automatically.
     """
-    tmp_dir = Path(tempfile.gettempdir())
+    clone_dir = get_settings().CLONE_DIR
+    tmp_dir = Path(clone_dir) if clone_dir else Path(tempfile.gettempdir())
     max_age_seconds = 3600  # 1 hour
 
     candidates = list(tmp_dir.glob("autodoc_*"))

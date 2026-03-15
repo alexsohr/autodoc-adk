@@ -41,6 +41,7 @@ class StructureExtractorInput:
 
     file_list: list[str]
     repo_path: str
+    readme_content: str = ""
     custom_instructions: str = ""
     style_audience: str = "developer"
     style_tone: str = "technical"

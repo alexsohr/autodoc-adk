@@ -6,14 +6,13 @@ from dataclasses import asdict
 
 from prefect import task
 
-from src.agents.common.agent_result import AgentResult
 from src.agents.structure_extractor import (
     StructureExtractor,
     StructureExtractorInput,
     WikiStructureSpec,
 )
 from src.config.settings import get_settings
-from src.database.repos.wiki_repo import WikiRepo
+from src.flows.schemas import StructureTaskResult, TokenUsageResult
 from src.services.config_loader import AutodocConfig
 
 logger = logging.getLogger(__name__)
@@ -35,33 +34,23 @@ async def extract_structure(
     file_list: list[str],
     repo_path: str,
     config: AutodocConfig,
-    wiki_repo: WikiRepo,
-) -> AgentResult[WikiStructureSpec]:
+    readme_content: str = "",
+) -> StructureTaskResult:
     """Run StructureExtractor agent and save result to database.
 
     Creates a DatabaseSessionService session (user_id=job_id), runs
     StructureExtractor with file list and config, saves WikiStructure
     to DB via WikiRepo (enforce version retention).
 
-    Args:
-        repository_id: Repository UUID.
-        job_id: Job UUID (used as session user_id).
-        branch: Target branch.
-        scope_path: Documentation scope path.
-        commit_sha: Current commit SHA.
-        file_list: List of repository file paths.
-        repo_path: Path to cloned repository.
-        config: AutodocConfig for this scope.
-        wiki_repo: WikiRepo instance for DB operations.
+    All parameters are JSON-serializable for cross-process execution.
 
     Returns:
-        AgentResult[WikiStructureSpec] with structure output and quality metadata.
+        StructureTaskResult with structure output and quality metadata.
     """
     settings = get_settings()
 
     # Create ADK DatabaseSessionService
-    # Note: We need to use the sync database URL for ADK's session service
-    db_url = settings.DATABASE_URL.replace("+asyncpg", "")
+    db_url = settings.DATABASE_URL
 
     from google.adk.sessions import DatabaseSessionService
 
@@ -73,6 +62,7 @@ async def extract_structure(
     input_data = StructureExtractorInput(
         file_list=file_list,
         repo_path=repo_path,
+        readme_content=readme_content,
         custom_instructions=config.custom_instructions,
         style_audience=config.style.audience,
         style_tone=config.style.tone,
@@ -85,19 +75,29 @@ async def extract_structure(
         session_id=session_id,
     )
 
-    # Save to database
+    sections_json = None
     if result.output is not None:
         sections_json = _structure_spec_to_sections_json(result.output)
-        await wiki_repo.create_structure(
-            repository_id=repository_id,
-            job_id=job_id,
-            branch=branch,
-            scope_path=scope_path,
-            title=result.output.title,
-            description=result.output.description,
-            sections=sections_json,
-            commit_sha=commit_sha,
-        )
+
+        # Save to database with own session
+        from src.database.engine import get_session_factory
+        from src.database.repos.wiki_repo import WikiRepo
+
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            wiki_repo = WikiRepo(session)
+            await wiki_repo.create_structure(
+                repository_id=repository_id,
+                job_id=job_id,
+                branch=branch,
+                scope_path=scope_path,
+                title=result.output.title,
+                description=result.output.description,
+                sections=sections_json,
+                commit_sha=commit_sha,
+            )
+            await session.commit()
+
         logger.info(
             "Saved wiki structure for %s/%s (score=%.2f, attempts=%d)",
             branch,
@@ -106,4 +106,18 @@ async def extract_structure(
             result.attempts,
         )
 
-    return result
+    return StructureTaskResult(
+        final_score=result.final_score,
+        passed_quality_gate=result.passed_quality_gate,
+        below_minimum_floor=result.below_minimum_floor,
+        attempts=result.attempts,
+        token_usage=TokenUsageResult(
+            input_tokens=result.token_usage.input_tokens,
+            output_tokens=result.token_usage.output_tokens,
+            total_tokens=result.token_usage.total_tokens,
+            calls=result.token_usage.calls,
+        ),
+        output_title=result.output.title if result.output else None,
+        output_description=result.output.description if result.output else None,
+        sections_json=sections_json,
+    )

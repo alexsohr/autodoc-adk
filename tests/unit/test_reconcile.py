@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -19,12 +20,15 @@ from src.flows.tasks.reconcile import reconcile_stale_jobs
 def _make_job(
     *,
     job_id: uuid.UUID | None = None,
+    status: str = "RUNNING",
     prefect_flow_run_id: str | None = None,
+    created_at: datetime | None = None,
 ) -> SimpleNamespace:
     return SimpleNamespace(
         id=job_id or uuid.uuid4(),
-        status="RUNNING",
+        status=status,
         prefect_flow_run_id=prefect_flow_run_id,
+        created_at=created_at or datetime.now(timezone.utc),
     )
 
 
@@ -37,12 +41,12 @@ def _make_flow_run(*, is_final: bool, state_name: str = "Running") -> SimpleName
 def _setup_mocks(
     mock_get_client: MagicMock,
     mock_job_repo_cls: MagicMock,
-    running_jobs: list,
+    active_jobs: list,
 ) -> tuple[AsyncMock, AsyncMock]:
     """Wire up the mock JobRepo and Prefect client, returning (mock_repo, mock_client)."""
     mock_repo = AsyncMock()
     mock_job_repo_cls.return_value = mock_repo
-    mock_repo.get_running_jobs = AsyncMock(return_value=running_jobs)
+    mock_repo.get_active_jobs = AsyncMock(return_value=active_jobs)
     mock_repo.update_status = AsyncMock()
 
     mock_client = AsyncMock()
@@ -62,16 +66,16 @@ class TestReconcileStaleJobs:
     """Tests for :func:`reconcile_stale_jobs`."""
 
     @patch("src.flows.tasks.reconcile.JobRepo")
-    async def test_no_running_jobs(self, MockJobRepo: MagicMock) -> None:
-        """When there are no RUNNING jobs, nothing should be updated."""
+    async def test_no_active_jobs(self, MockJobRepo: MagicMock) -> None:
+        """When there are no PENDING/RUNNING jobs, nothing should be updated."""
         mock_repo = AsyncMock()
         MockJobRepo.return_value = mock_repo
-        mock_repo.get_running_jobs = AsyncMock(return_value=[])
+        mock_repo.get_active_jobs = AsyncMock(return_value=[])
         mock_repo.update_status = AsyncMock()
 
         await reconcile_stale_jobs(session=AsyncMock())
 
-        mock_repo.get_running_jobs.assert_awaited_once()
+        mock_repo.get_active_jobs.assert_awaited_once()
         mock_repo.update_status.assert_not_awaited()
 
     @patch("prefect.client.orchestration.get_client")
@@ -89,7 +93,47 @@ class TestReconcileStaleJobs:
         call_args = mock_repo.update_status.call_args
         assert call_args[0][0] == job.id
         assert call_args[0][1] == "FAILED"
-        assert "no flow run ID" in call_args[1]["error_message"]
+        assert "no Prefect flow run ID" in call_args[1]["error_message"]
+
+    @patch("prefect.client.orchestration.get_client")
+    @patch("src.flows.tasks.reconcile.JobRepo")
+    async def test_pending_job_no_flow_run_id_stale(
+        self, MockJobRepo: MagicMock, mock_get_client: MagicMock
+    ) -> None:
+        """A PENDING job with no flow run ID older than threshold should be marked FAILED."""
+        old_time = datetime.now(timezone.utc) - timedelta(hours=2)
+        job = _make_job(
+            status="PENDING",
+            prefect_flow_run_id=None,
+            created_at=old_time,
+        )
+        mock_repo, _mock_client = _setup_mocks(mock_get_client, MockJobRepo, [job])
+
+        await reconcile_stale_jobs(session=AsyncMock())
+
+        mock_repo.update_status.assert_awaited_once()
+        call_args = mock_repo.update_status.call_args
+        assert call_args[0][0] == job.id
+        assert call_args[0][1] == "FAILED"
+        assert "PENDING" in call_args[1]["error_message"]
+
+    @patch("prefect.client.orchestration.get_client")
+    @patch("src.flows.tasks.reconcile.JobRepo")
+    async def test_pending_job_no_flow_run_id_recent(
+        self, MockJobRepo: MagicMock, mock_get_client: MagicMock
+    ) -> None:
+        """A recent PENDING job (under threshold) with no flow run ID should be skipped."""
+        recent_time = datetime.now(timezone.utc) - timedelta(minutes=5)
+        job = _make_job(
+            status="PENDING",
+            prefect_flow_run_id=None,
+            created_at=recent_time,
+        )
+        mock_repo, _mock_client = _setup_mocks(mock_get_client, MockJobRepo, [job])
+
+        await reconcile_stale_jobs(session=AsyncMock())
+
+        mock_repo.update_status.assert_not_awaited()
 
     @patch("prefect.client.orchestration.get_client")
     @patch("src.flows.tasks.reconcile.JobRepo")
@@ -110,7 +154,7 @@ class TestReconcileStaleJobs:
         call_args = mock_repo.update_status.call_args
         assert call_args[0][0] == job.id
         assert call_args[0][1] == "FAILED"
-        assert "Stale job reconciled on startup" in call_args[1]["error_message"]
+        assert "reconciled on startup" in call_args[1]["error_message"]
 
     @patch("prefect.client.orchestration.get_client")
     @patch("src.flows.tasks.reconcile.JobRepo")
@@ -148,20 +192,29 @@ class TestReconcileStaleJobs:
         call_args = mock_repo.update_status.call_args
         assert call_args[0][0] == job.id
         assert call_args[0][1] == "FAILED"
-        assert "Stale job reconciled on startup" in call_args[1]["error_message"]
+        assert "reconciled on startup" in call_args[1]["error_message"]
 
     @patch("prefect.client.orchestration.get_client")
     @patch("src.flows.tasks.reconcile.JobRepo")
     async def test_multiple_jobs_mixed(
         self, MockJobRepo: MagicMock, mock_get_client: MagicMock
     ) -> None:
-        """Multiple RUNNING jobs with different scenarios are handled independently."""
+        """Multiple active jobs with different scenarios are handled independently."""
         job_no_id = _make_job(prefect_flow_run_id=None)
         job_active = _make_job(prefect_flow_run_id=str(uuid.uuid4()))
         job_final = _make_job(prefect_flow_run_id=str(uuid.uuid4()))
+        # Stale PENDING job (2h old, no flow run ID)
+        old_time = datetime.now(timezone.utc) - timedelta(hours=2)
+        job_pending_stale = _make_job(
+            status="PENDING",
+            prefect_flow_run_id=None,
+            created_at=old_time,
+        )
 
         mock_repo, mock_client = _setup_mocks(
-            mock_get_client, MockJobRepo, [job_no_id, job_active, job_final]
+            mock_get_client,
+            MockJobRepo,
+            [job_no_id, job_active, job_final, job_pending_stale],
         )
 
         async def _read_flow_run(flow_run_id: uuid.UUID) -> SimpleNamespace:
@@ -175,8 +228,8 @@ class TestReconcileStaleJobs:
 
         await reconcile_stale_jobs(session=AsyncMock())
 
-        # Two jobs should have been marked FAILED (no-id + final)
-        assert mock_repo.update_status.await_count == 2
+        # Three jobs should have been marked FAILED (no-id RUNNING + final + stale PENDING)
+        assert mock_repo.update_status.await_count == 3
 
         # Collect the job ids that were updated
         updated_ids = {
@@ -184,6 +237,7 @@ class TestReconcileStaleJobs:
         }
         assert job_no_id.id in updated_ids
         assert job_final.id in updated_ids
+        assert job_pending_stale.id in updated_ids
         assert job_active.id not in updated_ids
 
     @patch("prefect.client.orchestration.get_client")

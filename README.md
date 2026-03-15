@@ -8,13 +8,16 @@ Built with [Google ADK](https://github.com/google/adk-python), [Prefect 3](https
 
 - [How It Works](#how-it-works)
 - [Features](#features)
-- [Quick Start](#quick-start)
+- [Getting Started](#getting-started)
+  - [Prerequisites](#prerequisites)
+  - [Development Setup](#development-setup)
+  - [Production Deployment](#production-deployment)
+- [Usage](#usage)
 - [Configuration](#configuration)
 - [API Reference](#api-reference)
 - [Search](#search)
 - [MCP Server](#mcp-server)
 - [Architecture](#architecture)
-- [Deployment](#deployment)
 - [Development](#development)
 - [Testing](#testing)
 - [Tech Stack](#tech-stack)
@@ -101,7 +104,7 @@ After initial generation, subsequent runs auto-detect changes via the provider's
 - Per-agent model overrides (Generator and Critic can use different models)
 - Webhook-driven updates from GitHub/Bitbucket push events
 
-## Quick Start
+## Getting Started
 
 ### Prerequisites
 
@@ -111,36 +114,119 @@ After initial generation, subsequent runs auto-detect changes via the provider's
 - Git
 - Node.js 18+ (required for the filesystem MCP server used by agents)
 
-### Option A: Full Docker Stack
+### Development Setup
+
+Run the API locally with hot reload. Infrastructure (PostgreSQL, Prefect Server) runs in Docker; the application runs on your host.
+
+**Step 1: Install dependencies**
 
 ```bash
-git clone <repo-url> autodoc-adk && cd autodoc-adk
+uv sync
+```
+
+**Step 2: Configure environment**
+
+```bash
+cp .env.example .env
+# Edit .env with your LLM provider credentials (see .env.example for all options)
+```
+
+**Step 3: Start infrastructure**
+
+```bash
+cd deployment && make dev-up && cd ..
+```
+
+This starts PostgreSQL (with pgvector) on port 5432 and Prefect Server on port 4200.
+
+**Step 4: Run database migrations**
+
+```bash
+cd deployment && make migrate && cd ..
+```
+
+**Step 5: Start the API**
+
+```bash
+cd deployment && make api
+```
+
+The API starts at http://localhost:8080 with hot reload enabled.
+
+**Step 6: Verify**
+
+```bash
+# Health check — database and prefect should be "healthy"
+curl http://localhost:8080/health
+
+# Open Swagger UI
+open http://localhost:8080/docs
+```
+
+**Step 7 (optional): Enable job execution**
+
+Steps 1–6 give you the API, database, and Swagger UI. To actually run documentation generation jobs, you also need the Prefect worker:
+
+```bash
+# Deploy flows to Prefect (one-time setup)
+cd deployment && make deploy-local && cd ..
+
+# Start the worker (keep this running in a separate terminal)
+cd deployment && make worker
+```
+
+**Teardown**
+
+```bash
+cd deployment && make dev-down    # Stop infrastructure (preserves data)
+cd deployment && make dev-clean   # Stop and delete all data
+```
+
+### Production Deployment
+
+Run the entire stack in Docker with a single command.
+
+```bash
 cp .env.example .env
 # Edit .env with your LLM provider credentials
 
 cd deployment
-make dev-up       # Start PostgreSQL + Prefect Server
-make migrate      # Run database migrations
-make deploy-local # Deploy Prefect flows
-make worker       # Start Prefect worker (new terminal)
-make api          # Start FastAPI server (new terminal)
+docker compose up -d
 ```
 
-Services start at:
-- **API**: http://localhost:8080
-- **Prefect UI**: http://localhost:4200
-- **PostgreSQL**: localhost:5432
+This starts all services together:
 
-### Option B: Full Docker Compose
+| Service | Port | Description |
+|---------|------|-------------|
+| PostgreSQL (pgvector) | 5432 | Application database + Prefect metadata |
+| Prefect Server | 4200 | Flow orchestration UI and API |
+| Prefect Worker | — | Polls for and executes flow runs |
+| FastAPI | 8080 | REST API |
+
+All services have health checks and dependency ordering — the API and worker wait for PostgreSQL and Prefect Server to be ready before starting.
+
+**Docker images:**
+
+| Image | Base | Purpose |
+|-------|------|---------|
+| API | python:3.11-slim | Serves REST API |
+| Worker | prefecthq/prefect:3-python3.11 | Polls Prefect Server, launches flow runners |
+| Flow Runner | python:3.11-slim + Node.js 18 | Executes documentation generation |
+
+**Database:** A single PostgreSQL instance hosts two databases — `autodoc` (application data with pgvector) and `prefect` (Prefect metadata, auto-managed). The `init-db.sql` script creates both on first startup.
+
+**Webhook setup:** Configure your Git provider to send push events to `POST https://your-host/webhooks/push`. AutoDoc detects the provider from request headers (`X-GitHub-Event` for GitHub, `X-Event-Key` for Bitbucket), extracts the repository URL and branch, and triggers the appropriate generation job. Unregistered repositories or non-configured branches return 204 (skipped).
+
+**Manage:**
 
 ```bash
 cd deployment
-docker compose up
+docker compose down      # Stop (preserves data)
+docker compose down -v   # Stop and delete all data
+docker compose logs -f   # Follow logs
 ```
 
-This starts PostgreSQL (pgvector), Prefect Server, Prefect Worker, and the API together.
-
-### Basic Usage
+## Usage
 
 **1. Register a repository**
 
@@ -510,31 +596,7 @@ flowchart LR
 | `orchestrator-pool` | Kubernetes | 10 | Production orchestrator flows |
 | `k8s-pool` | Kubernetes | 50 | Production scope workers + cleanup |
 
-## Deployment
-
-### Docker Images
-
-AutoDoc builds three container images:
-
-| Image | Base | Contents | Purpose |
-|-------|------|----------|---------|
-| **API** | python:3.11-slim | FastAPI + database deps | Serves REST API |
-| **Worker** | prefecthq/prefect:3-python3.11 | Prefect worker only | Polls server, launches flow runners |
-| **Flow Runner** | python:3.11-slim + Node.js 18 | All AI libs, flow code, git | Executes documentation generation |
-
-### Docker Compose
-
-**Full stack** (`deployment/docker-compose.yml`): PostgreSQL/pgvector, Prefect Server, Worker, API with health checks and dependency ordering.
-
-**Dev infrastructure** (`deployment/docker/docker-compose.dev.yml`): PostgreSQL and Prefect Server only. Run API and Worker locally for hot reload.
-
-### Database
-
-Single PostgreSQL instance hosts two databases:
-- `autodoc`: Application data (repositories, jobs, wiki structures, pages, embeddings)
-- `prefect`: Prefect Server metadata (auto-managed by Prefect, migrates on startup)
-
-The pgvector extension enables vector similarity search on the `autodoc` database.
+## Development
 
 ### Makefile Targets
 
@@ -552,40 +614,6 @@ Run from the `deployment/` directory:
 | `make deploy-flows` | Deploy all Prefect flows |
 | `make test` | Run test suite |
 | `make lint` | Run ruff linter |
-
-### Webhook Setup
-
-Configure your Git provider to send push events to:
-
-```
-POST https://your-host/webhooks/push
-```
-
-AutoDoc detects the provider from request headers (`X-GitHub-Event` for GitHub, `X-Event-Key` for Bitbucket), extracts the repository URL and branch, and triggers the appropriate generation job. Unregistered repositories or non-configured branches return 204 (skipped).
-
-## Development
-
-### Setup
-
-```bash
-# Install dependencies
-uv sync
-
-# Start infrastructure
-cd deployment && make dev-up && cd ..
-
-# Run migrations
-cd deployment && make migrate && cd ..
-
-# Deploy Prefect flows
-cd deployment && make deploy-local && cd ..
-
-# Start worker (terminal 1)
-cd deployment && make worker
-
-# Start API with hot reload (terminal 2)
-cd deployment && make api
-```
 
 ### Code Quality
 

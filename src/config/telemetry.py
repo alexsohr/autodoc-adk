@@ -106,6 +106,7 @@ def configure_telemetry() -> None:
 
     Environment variables consumed:
 
+    * ``OTEL_ENABLED`` - enable OTLP trace export (default ``false``)
     * ``OTEL_SERVICE_NAME`` - resource ``service.name`` (default ``autodoc-adk``)
     * ``APP_COMMIT_SHA`` - resource ``service.version`` (default ``unknown``)
     * ``OTEL_EXPORTER_OTLP_ENDPOINT`` - gRPC collector (default ``http://localhost:4317``)
@@ -116,25 +117,27 @@ def configure_telemetry() -> None:
         return
     _configured = True
 
+    otel_enabled = os.getenv("OTEL_ENABLED", "false").lower() in ("true", "1", "yes")
+
     # ── Tracing ──────────────────────────────────────────────────────────
-    resource = Resource.create(
-        {
-            "service.name": os.getenv("OTEL_SERVICE_NAME", "autodoc-adk"),
-            "service.version": os.getenv("APP_COMMIT_SHA", "unknown"),
-        }
-    )
+    if otel_enabled:
+        resource = Resource.create(
+            {
+                "service.name": os.getenv("OTEL_SERVICE_NAME", "autodoc-adk"),
+                "service.version": os.getenv("APP_COMMIT_SHA", "unknown"),
+            }
+        )
 
-    provider = TracerProvider(resource=resource)
+        provider = TracerProvider(resource=resource)
 
-    endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317")
-    exporter = OTLPSpanExporter(endpoint=endpoint, insecure=True)
-    provider.add_span_processor(BatchSpanProcessor(exporter))
+        endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317")
+        exporter = OTLPSpanExporter(endpoint=endpoint, insecure=True)
+        provider.add_span_processor(BatchSpanProcessor(exporter))
 
-    trace.set_tracer_provider(provider)
+        trace.set_tracer_provider(provider)
 
-    # ── LoggingInstrumentor ──────────────────────────────────────────────
-    # Injects otelTraceID / otelSpanID / otelServiceName into log records.
-    LoggingInstrumentor().instrument(set_logging_format=False)
+        # Injects otelTraceID / otelSpanID / otelServiceName into log records.
+        LoggingInstrumentor().instrument(set_logging_format=False)
 
     # ── JSON structured logging ──────────────────────────────────────────
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()

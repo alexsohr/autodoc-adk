@@ -40,13 +40,13 @@ def _check_below_floor(
 
 
 def _extract_token_usage(event: Any) -> TokenUsage:
-    """Extract token usage from a single ADK event's usageMetadata."""
+    """Extract token usage from a single ADK event's usage_metadata."""
     usage = TokenUsage()
-    if event.usageMetadata is not None:
-        meta = event.usageMetadata
-        usage.input_tokens = meta.promptTokenCount or 0
-        usage.output_tokens = meta.candidatesTokenCount or 0
-        usage.total_tokens = meta.totalTokenCount or 0
+    meta = getattr(event, "usage_metadata", None)
+    if meta is not None:
+        usage.input_tokens = getattr(meta, "prompt_token_count", 0) or 0
+        usage.output_tokens = getattr(meta, "candidates_token_count", 0) or 0
+        usage.total_tokens = getattr(meta, "total_token_count", 0) or 0
         usage.calls = 1
     return usage
 

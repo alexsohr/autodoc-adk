@@ -69,12 +69,15 @@ class WikiRepo:
         )
         self._session.add(structure)
         await self._session.flush()
+        await self._session.refresh(structure)
         return structure
 
     async def create_pages(self, pages: list[WikiPage]) -> list[WikiPage]:
         """Batch-insert wiki pages and return them with populated defaults."""
         self._session.add_all(pages)
         await self._session.flush()
+        for page in pages:
+            await self._session.refresh(page)
         return pages
 
     async def create_chunks(self, chunks: list[PageChunk]) -> list[PageChunk]:
@@ -197,4 +200,6 @@ class WikiRepo:
             copies.append(copy)
         self._session.add_all(copies)
         await self._session.flush()
+        for copy in copies:
+            await self._session.refresh(copy)
         return copies
