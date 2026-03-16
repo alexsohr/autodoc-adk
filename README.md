@@ -137,7 +137,7 @@ cp .env.example .env
 cd deployment && make dev-up && cd ..
 ```
 
-This starts PostgreSQL (with pgvector) on port 5432 and Prefect Server on port 4200.
+This starts PostgreSQL (with pgvector) on port 5432, Redis on port 6379, and Prefect Server on port 4200.
 
 **Step 4: Run database migrations**
 
@@ -184,6 +184,16 @@ cd deployment && make dev-clean   # Stop and delete all data
 
 ### Production Deployment
 
+AutoDoc supports three deployment profiles:
+
+| Profile | Infrastructure | Application | Use Case |
+|---------|---------------|-------------|----------|
+| **dev** | Docker Compose | Docker Compose | Local development |
+| **dev-k8s** | Docker Compose (PostgreSQL + Redis) | Kubernetes | Test K8s deployment locally |
+| **prod** | External managed (PostgreSQL + Redis) | Kubernetes | Production |
+
+#### Docker Compose (dev profile)
+
 Run the entire stack in Docker with a single command.
 
 ```bash
@@ -199,25 +209,45 @@ This starts all services together:
 | Service | Port | Description |
 |---------|------|-------------|
 | PostgreSQL (pgvector) | 5432 | Application database + Prefect metadata |
+| Redis | 6379 | Prefect 3 messaging, caching, and event ordering |
 | Prefect Server | 4200 | Flow orchestration UI and API |
-| Prefect Worker | — | Polls for and executes flow runs |
+| Prefect Worker | -- | Polls for and executes flow runs |
 | FastAPI | 8080 | REST API |
 
-All services have health checks and dependency ordering — the API and worker wait for PostgreSQL and Prefect Server to be ready before starting.
+All services have health checks and dependency ordering -- the API and worker wait for PostgreSQL, Redis, and Prefect Server to be ready before starting.
+
+#### Kubernetes (dev-k8s and prod profiles)
+
+For K8s deployment, manifests are organized with Kustomize under `deployment/k8s/`:
+
+```bash
+# Dev-k8s: Docker infra + K8s application
+cd deployment/docker && docker compose -f docker-compose.dev.yml up -d
+kubectl apply -k deployment/k8s/overlays/dev-k8s
+
+# Production: full K8s with external managed services
+kubectl apply -k deployment/k8s/overlays/prod
+```
+
+In K8s mode, each documentation generation job runs as an isolated K8s Job with its own `emptyDir` workspace. The Prefect server is split into a scalable API server (`--no-services`) and a singleton background services instance. Two Prefect workers poll separate work pools (`orchestrator-pool` and `k8s-pool`) to prevent deadlock.
+
+See [`deployment/k8s/README.md`](deployment/k8s/README.md) for detailed K8s setup instructions, work pool configuration, secret management, and troubleshooting.
 
 **Docker images:**
 
 | Image | Base | Purpose |
 |-------|------|---------|
 | API | python:3.11-slim | Serves REST API |
-| Worker | prefecthq/prefect:3-python3.11 | Polls Prefect Server, launches flow runners |
+| Worker | prefecthq/prefect:3-python3.11 | Polls Prefect Server, launches flow runners (includes `prefect-kubernetes`) |
 | Flow Runner | python:3.11-slim + Node.js 18 | Executes documentation generation |
 
-**Database:** A single PostgreSQL instance hosts two databases — `autodoc` (application data with pgvector) and `prefect` (Prefect metadata, auto-managed). The `init-db.sql` script creates both on first startup.
+**Database:** A single PostgreSQL instance hosts two databases -- `autodoc` (application data with pgvector) and `prefect` (Prefect metadata, auto-managed). The `init-db.sql` script creates both on first startup.
+
+**Redis:** Required by Prefect 3 for messaging, caching, event ordering, and lease storage. Runs in Docker for dev/dev-k8s profiles; use a managed service (ElastiCache, Memorystore) for production.
 
 **Webhook setup:** Configure your Git provider to send push events to `POST https://your-host/webhooks/push`. AutoDoc detects the provider from request headers (`X-GitHub-Event` for GitHub, `X-Event-Key` for Bitbucket), extracts the repository URL and branch, and triggers the appropriate generation job. Unregistered repositories or non-configured branches return 204 (skipped).
 
-**Manage:**
+**Manage (Docker Compose):**
 
 ```bash
 cd deployment
@@ -592,9 +622,11 @@ flowchart LR
 
 | Pool | Type | Limit | Purpose |
 |------|------|-------|---------|
-| `local-dev` | Process | — | Local development |
-| `orchestrator-pool` | Kubernetes | 10 | Production orchestrator flows |
-| `k8s-pool` | Kubernetes | 50 | Production scope workers + cleanup |
+| `local-dev` | Process | -- | Local development (dev profile) |
+| `orchestrator-pool` | Kubernetes | 10 | Orchestrator flows (dev-k8s and prod profiles) |
+| `k8s-pool` | Kubernetes | 50 | Scope processing workers (dev-k8s and prod profiles) |
+
+The `AUTODOC_FLOW_DEPLOYMENT_PREFIX` env var (`dev`, `dev-k8s`, or `prod`) selects which Prefect deployments to target. In dev mode, flows run in-process via `asyncio.create_task()`. In dev-k8s and prod modes, flows are dispatched via `run_deployment()` to K8s work pools, where Prefect workers create isolated K8s Jobs.
 
 ## Development
 
@@ -677,8 +709,10 @@ Test categories:
 | Agent File Access | [@modelcontextprotocol/server-filesystem](https://www.npmjs.com/package/@modelcontextprotocol/server-filesystem) (via Node.js) |
 | Package Manager | [uv](https://docs.astral.sh/uv/) |
 | Linting | [Ruff](https://docs.astral.sh/ruff/) |
+| Caching/Messaging | Redis 7 (required by Prefect 3) |
 | Testing | pytest + pytest-asyncio, prefect_test_harness |
 | Containers | Docker (3 images: API, Worker, Flow Runner) |
+| Orchestration Infra | Kubernetes 1.23+ with Kustomize overlays (dev-k8s, prod) |
 
 ## License
 

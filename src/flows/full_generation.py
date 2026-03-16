@@ -6,6 +6,7 @@ import uuid
 
 from prefect import flow
 
+from src.config.settings import get_settings
 from src.database.engine import get_session_factory
 from src.database.repos.job_repo import JobRepo
 from src.database.repos.repository_repo import RepositoryRepo
@@ -104,22 +105,52 @@ async def full_generation_flow(
 
         # Step 4: Process all scopes in parallel
         # No DB session held — child tasks can freely use the pool.
-        async def _process_scope(cfg):
-            return await scope_processing_flow(
-                repository_id=repository_id,
-                job_id=job_id,
-                branch=branch,
-                scope_path=cfg.scope_path,
-                commit_sha=commit_sha,
-                repo_path=repo_path,
-                config=cfg,
-                dry_run=dry_run,
-            )
+        settings = get_settings()
+        prefix = settings.AUTODOC_FLOW_DEPLOYMENT_PREFIX
 
-        scope_results = await asyncio.gather(
-            *[_process_scope(cfg) for cfg in configs],
-            return_exceptions=True,
-        )
+        if prefix == "dev":
+            # Dev mode: run scope processing in-process
+            async def _process_scope(cfg):
+                return await scope_processing_flow(
+                    repository_id=repository_id,
+                    job_id=job_id,
+                    branch=branch,
+                    scope_path=cfg.scope_path,
+                    commit_sha=commit_sha,
+                    repo_path=repo_path,
+                    config=cfg,
+                    dry_run=dry_run,
+                )
+
+            scope_results = await asyncio.gather(
+                *[_process_scope(cfg) for cfg in configs],
+                return_exceptions=True,
+            )
+        else:
+            # K8s mode: dispatch scope processing via run_deployment()
+            from prefect.deployments import run_deployment
+
+            deployment_name = f"scope_processing/{prefix}-scope-processing"
+
+            async def _dispatch_scope(cfg):
+                return await run_deployment(
+                    name=deployment_name,
+                    parameters={
+                        "repository_id": str(repository_id),
+                        "job_id": str(job_id),
+                        "branch": branch,
+                        "scope_path": cfg.scope_path,
+                        "commit_sha": commit_sha,
+                        "clone_input": clone_input.model_dump(),
+                        "config": cfg.model_dump() if hasattr(cfg, "model_dump") else cfg.__dict__,
+                        "dry_run": dry_run,
+                    },
+                )
+
+            scope_results = await asyncio.gather(
+                *[_dispatch_scope(cfg) for cfg in configs],
+                return_exceptions=True,
+            )
 
         # Collect results across all scopes
         all_structure_results = []

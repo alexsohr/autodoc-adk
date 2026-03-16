@@ -88,6 +88,9 @@ COPY pyproject.toml uv.lock ./
 # Source code — this is where flows, agents, models, and config live
 COPY src/ ./src/
 
+# README (required by hatchling for package metadata during pip install)
+COPY README.md ./
+
 # Prefect deployment definitions
 COPY prefect.yaml ./
 

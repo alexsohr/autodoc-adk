@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: autodoc-api
+  namespace: autodoc
+  labels:
+    app.kubernetes.io/part-of: autodoc
+    app.kubernetes.io/component: api
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/component: api
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP

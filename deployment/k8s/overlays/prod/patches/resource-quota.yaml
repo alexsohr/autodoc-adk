@@ -1,0 +1,13 @@
+# Production resource quota
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: autodoc-quota
+  namespace: autodoc
+spec:
+  hard:
+    requests.cpu: "128"
+    requests.memory: 256Gi
+    limits.cpu: "256"
+    limits.memory: 512Gi
+    count/jobs.batch: "200"

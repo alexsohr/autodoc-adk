@@ -1,0 +1,13 @@
+# Relaxed resource quota for dev-k8s
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: autodoc-quota
+  namespace: autodoc
+spec:
+  hard:
+    requests.cpu: "16"
+    requests.memory: 32Gi
+    limits.cpu: "32"
+    limits.memory: 64Gi
+    count/jobs.batch: "20"

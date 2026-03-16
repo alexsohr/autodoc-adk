@@ -68,7 +68,41 @@ deployments:
       - incremental
       - prod
 
-  # Orphan workspace cleanup flow - dev
+  # --- dev-k8s deployments (hybrid: Docker infra + K8s application) ---
+
+  # Full generation flow - dev-k8s (orchestrator pool)
+  - name: dev-k8s-full-generation
+    entrypoint: src/flows/full_generation.py:full_generation_flow
+    work_pool:
+      name: orchestrator-pool
+    tags:
+      - autodoc
+      - full-generation
+      - dev-k8s
+
+  # Scope processing flow - dev-k8s (k8s pool)
+  - name: dev-k8s-scope-processing
+    entrypoint: src/flows/scope_processing.py:scope_processing_flow
+    work_pool:
+      name: k8s-pool
+    tags:
+      - autodoc
+      - scope-processing
+      - dev-k8s
+
+  # Incremental update flow - dev-k8s (orchestrator pool)
+  - name: dev-k8s-incremental
+    entrypoint: src/flows/incremental_update.py:incremental_update_flow
+    work_pool:
+      name: orchestrator-pool
+    tags:
+      - autodoc
+      - incremental
+      - dev-k8s
+
+  # --- Cleanup (dev Docker Compose only — K8s uses emptyDir) ---
+
+  # Orphan workspace cleanup flow - dev only
   - name: dev-cleanup
     entrypoint: src/flows/tasks/cleanup.py:cleanup_orphan_workspaces
     work_pool:
@@ -80,16 +114,3 @@ deployments:
       - autodoc
       - cleanup
       - dev
-
-  # Orphan workspace cleanup flow - prod
-  - name: prod-cleanup
-    entrypoint: src/flows/tasks/cleanup.py:cleanup_orphan_workspaces
-    work_pool:
-      name: k8s-pool
-    schedules:
-      - cron: "*/15 * * * *"
-        timezone: "UTC"
-    tags:
-      - autodoc
-      - cleanup
-      - prod

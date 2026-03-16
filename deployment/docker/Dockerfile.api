@@ -29,8 +29,9 @@ COPY pyproject.toml uv.lock ./
 RUN uv venv /build/.venv && \
     uv sync --frozen --no-dev --no-install-project
 
-# Copy application source code
+# Copy application source code and README (required by hatchling for package metadata)
 COPY src/ ./src/
+COPY README.md ./
 
 # Install the project itself (hatchling wheel build) into the same venv
 RUN uv sync --frozen --no-dev --no-editable

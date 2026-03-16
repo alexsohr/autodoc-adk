@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prefect-background-services
+  namespace: autodoc
+  labels:
+    app.kubernetes.io/part-of: autodoc
+    app.kubernetes.io/component: prefect-background-services
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: prefect-background-services
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: autodoc
+        app.kubernetes.io/component: prefect-background-services
+    spec:
+      containers:
+        - name: prefect-background-services
+          image: prefecthq/prefect:3-latest
+          command: ["prefect", "server", "services", "start"]
+          env:
+            - name: PREFECT_API_DATABASE_CONNECTION_URL
+              valueFrom:
+                secretKeyRef:
+                  name: autodoc-db-credentials
+                  key: PREFECT_API_DATABASE_CONNECTION_URL
+            - name: PREFECT_REDIS_MESSAGING_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: autodoc-redis-credentials
+                  key: PREFECT_REDIS_MESSAGING_HOST
+            - name: PREFECT_REDIS_MESSAGING_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: autodoc-redis-credentials
+                  key: PREFECT_REDIS_MESSAGING_PORT
+          envFrom:
+            - configMapRef:
+                name: autodoc-config
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
