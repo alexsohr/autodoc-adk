@@ -89,8 +89,8 @@ async def _submit_flow(
             await run_deployment(
                 name=f"{flow_name}/{deployment_name}",
                 parameters={
-                    "repository_id": str(repository_id),
-                    "job_id": str(job_id),
+                    "repository_id": repository_id,
+                    "job_id": job_id,
                     "branch": branch,
                     "dry_run": dry_run,
                 },
@@ -247,14 +247,28 @@ async def create_job(
         callback_url=body.callback_url,
     )
 
-    # 7. Submit flow as detached asyncio task
-    await _submit_flow(
-        mode=mode,
-        repository_id=body.repository_id,
-        job_id=job.id,
-        branch=branch,
-        dry_run=body.dry_run,
-    )
+    # 7. Submit flow
+    try:
+        await _submit_flow(
+            mode=mode,
+            repository_id=body.repository_id,
+            job_id=job.id,
+            branch=branch,
+            dry_run=body.dry_run,
+        )
+    except Exception as exc:
+        logger.error(
+            "Failed to submit %s flow for job %s: %s", mode, job.id, exc
+        )
+        job = await job_repo.update_status(
+            job.id,
+            "FAILED",
+            error_message=f"Flow submission failed: {exc}",
+        )
+        return JSONResponse(
+            status_code=201,
+            content=JobResponse.model_validate(job).model_dump(mode="json"),
+        )
 
     logger.info(
         "Created %s job %s for repo %s branch=%s",
@@ -636,14 +650,23 @@ async def retry_job(
         )
         mode = "full" if structure is None else "incremental"
 
-    # Re-submit flow as detached asyncio task
-    await _submit_flow(
-        mode=mode,
-        repository_id=updated.repository_id,
-        job_id=updated.id,
-        branch=updated.branch,
-        dry_run=updated.dry_run,
-    )
+    # Re-submit flow
+    try:
+        await _submit_flow(
+            mode=mode,
+            repository_id=updated.repository_id,
+            job_id=updated.id,
+            branch=updated.branch,
+            dry_run=updated.dry_run,
+        )
+    except Exception as exc:
+        logger.error("Failed to submit retry flow for job %s: %s", job_id, exc)
+        updated = await job_repo.update_status(
+            job_id,
+            "FAILED",
+            error_message=f"Flow submission failed: {exc}",
+        )
+        return JobResponse.model_validate(updated)
 
     logger.info("Retrying job %s (mode=%s)", job_id, mode)
     return JobResponse.model_validate(updated)

@@ -14,7 +14,7 @@ from src.flows.tasks.embeddings import generate_embeddings_task
 from src.flows.tasks.pages import generate_pages
 from src.flows.tasks.readme import distill_readme
 from src.flows.tasks.structure import extract_structure
-from src.services.config_loader import AutodocConfig
+from src.services.config_loader import AutodocConfig, autodoc_config_from_dict
 
 logger = logging.getLogger(__name__)
 
@@ -92,12 +92,15 @@ async def scope_processing_flow(
         ScopeProcessingResult with structure_result, page_results, readme_result,
         wiki_structure_id, embedding_count.
     """
+    repository_id = uuid.UUID(str(repository_id))
+    job_id = uuid.UUID(str(job_id))
+
     from src.flows.schemas import CloneInput
 
     # If config was passed as a dict (from K8s run_deployment serialization),
-    # reconstruct the AutodocConfig object
+    # reconstruct the AutodocConfig with nested dataclasses (style, readme, etc.)
     if isinstance(config, dict):
-        config = AutodocConfig(**config)
+        config = autodoc_config_from_dict(config)
 
     # K8s mode: clone repo at start of execution
     cloned_here = False
