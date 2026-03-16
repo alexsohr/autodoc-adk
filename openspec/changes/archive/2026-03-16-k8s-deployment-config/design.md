@@ -60,17 +60,19 @@ The Kubernetes cluster must be 1.23+ for TTL controller GA support.
 
 **Decision**: Add Redis 7 as a required component for Prefect 3 server. In dev, Redis runs in Docker Compose. In dev-k8s, Redis runs in Docker alongside PostgreSQL. In prod, Redis is an external managed service (ElastiCache, Memorystore, etc.) configured via K8s Secrets.
 
+**AMENDED**: Redis is added to the dev `docker-compose.yml`, but the Prefect server in dev uses `prefecthq/prefect:3-python3.11` in combined mode **without** Redis env vars. The `3-latest` image bundles asyncpg 0.30+ which defaults to SSL and fails against the local PostgreSQL container (which does not have SSL configured). In K8s deployments, `3-latest` is used with Redis. Redis still runs in dev Docker Compose for the dev-k8s profile (infrastructure-only), where K8s-deployed Prefect components connect to it.
+
 **Rationale**: Prefect 3's official self-hosted deployment requires Redis for:
 - `PREFECT_MESSAGING_BROKER: prefect_redis.messaging`
 - `PREFECT_MESSAGING_CACHE: prefect_redis.messaging`
 - `PREFECT_SERVER_EVENTS_CAUSAL_ORDERING: prefect_redis.ordering`
 - `PREFECT_SERVER_CONCURRENCY_LEASE_STORAGE: prefect_redis.lease_storage`
 
-Without Redis, Prefect 3 server cannot function correctly for event processing and background services.
+Without Redis, Prefect 3 server cannot function correctly for event processing and background services. However, in dev Docker Compose the combined-mode Prefect server operates without Redis using in-process alternatives.
 
 **Alternatives considered**:
 - In-cluster Redis for all profiles: Rejected — production should use managed services for reliability and operational simplicity.
-- Skip Redis (use Prefect without it): Not viable — Prefect 3 requires it.
+- Skip Redis (use Prefect without it): Not viable for K8s/prod — Prefect 3 requires it for split API + background services mode.
 
 ### D3: Prefect server split — API + Background Services
 
@@ -162,6 +164,12 @@ Profile 3: prod (full K8s)
 - `emptyDir` volume mount at `/tmp/autodoc-workspaces`
 - Environment variables from ConfigMap + Secrets
 
+**AMENDED**: Prefect's KubernetesWorker imposes specific requirements on the base job template:
+- `completions: 1` and `parallelism: 1` MUST be set in the Job spec (validation fails without them)
+- Container name MUST be `prefect-job` (not configurable — the worker looks for this name to inject environment and command overrides)
+- `namespace` MUST be set at the `job_configuration` level (not just `job_manifest.metadata.namespace`) — the worker reads the config-level field to determine where to create Jobs
+- `imagePullPolicy: IfNotPresent` MUST be set when using `:latest` tags with locally-built images (K8s defaults to `Always`, which fails for images not in a remote registry)
+
 **Chosen cleanup approach**: Set `ttlSecondsAfterFinished: 86400` as the default in the base job template (all Jobs retained 24h as fail-safe). Deploy a `job-cleanup` CronJob (runs every 5 minutes) that deletes succeeded Jobs older than 5 minutes. This achieves: success = cleaned up quickly, failure = retained 24 hours.
 
 **Rationale**: The K8s TTL controller applies a single TTL value regardless of success/failure. To get differential behavior, we need a cleanup mechanism for the success case while letting the TTL controller handle the failure case.
@@ -238,11 +246,13 @@ Retries re-execute the entire flow from scratch. Task result caching (via `cache
 **Alternatives considered**:
 - Build a custom image from scratch: Overkill — a single `pip install` suffices.
 
-### D12b: Prefect server image — use `3-latest`
+### D12b: Prefect server image
 
-**Decision**: Use `prefecthq/prefect:3-latest` for Prefect API server and background services Deployments (both K8s and Docker Compose). The `3-latest` tag bundles `prefect-redis`, which is required for Redis messaging. The worker Dockerfile continues to extend the base image with `pip install prefect-kubernetes`.
+**Decision**: Use `prefecthq/prefect:3-latest` for Prefect API server and background services K8s Deployments (in `base/prefect/`). The `3-latest` tag bundles `prefect-redis`, which is required for Redis messaging. The worker Dockerfile continues to extend the base image with `pip install prefect-kubernetes`.
 
-**Rationale**: The `3-python3.11` tag does NOT include `prefect-redis`. Without it, Prefect cannot connect to Redis for messaging/caching. The `3-latest` tag (Python 3.12) includes `prefect-redis` out of the box. Python 3.12 is compatible with our codebase (we require 3.11+).
+**AMENDED**: In dev Docker Compose, use `prefecthq/prefect:3-python3.11` (not `3-latest`) due to asyncpg SSL incompatibility. The `3-latest` image includes asyncpg 0.30+ which defaults to SSL connections, and the local Docker PostgreSQL container does not have SSL configured. This causes connection failures. The `3-python3.11` image uses an older asyncpg that does not default to SSL. In K8s deployments (`base/prefect/`), `3-latest` is used because the PostgreSQL connection can be configured with appropriate SSL settings or the managed database supports SSL. The worker Dockerfile (`Dockerfile.worker`) extends `3-python3.11` (not `3-latest`) for the same asyncpg compatibility reason.
+
+**Rationale**: The `3-python3.11` tag does NOT include `prefect-redis`. Without it, Prefect cannot connect to Redis for messaging/caching. The `3-latest` tag (Python 3.12) includes `prefect-redis` out of the box. Python 3.12 is compatible with our codebase (we require 3.11+). However, the asyncpg version bundled in `3-latest` breaks local dev PostgreSQL connectivity.
 
 ### D12c: CLONE_DIR must match emptyDir mount point
 
@@ -265,33 +275,33 @@ Prefect deployment names:
 
 **Decision**: Each flow runner K8s Job clones the repository independently into an `emptyDir` volume. No shared filesystem (NFS, PVC) or object storage relay (S3) is used. The `emptyDir` volume is automatically cleaned up when the pod terminates.
 
+**AMENDED**: Scope processing runs **in-process** within the orchestrator K8s Job for ALL deployment profiles. The original design of dispatching scopes as separate K8s Jobs via `run_deployment()` does not work because `run_deployment()` returns a `FlowRun` status object, not the flow's return value (`ScopeProcessingResult`). Cross-Job result serialization would require shared storage infrastructure (S3, Redis) that is not yet provisioned. This is deferred to a future change. Since scope processing runs in-process, only the orchestrator Job clones the repository, and the scope processing flow receives the local `repo_path` directly (no re-clone needed).
+
 ```
-Orchestrator Job (emptyDir)              Scope Jobs (emptyDir each)
-┌──────────────────────────┐
-│ clone_repository()       │    ┌─────────────────────────────┐
-│   └→ /tmp/autodoc_xxx/   │    │ Scope Job 1 (emptyDir)      │
-│                          │    │  clone_repository()          │
-│ discover_autodoc_configs │    │   └→ /tmp/autodoc_yyy/       │
-│   └→ [scope_a, scope_b] │    │  scan → extract → generate  │
-│                          │    │  results → DB               │
-│ run_deployment(scope_a)──┼───▶│  pod dies → emptyDir gone   │
-│ run_deployment(scope_b)──┼─┐  └─────────────────────────────┘
-│                          │ │  ┌─────────────────────────────┐
-│ wait for results         │ └─▶│ Scope Job 2 (emptyDir)      │
-│ pod dies → emptyDir gone │    │  clone_repository()          │
-└──────────────────────────┘    │  pod dies → emptyDir gone   │
-                                └─────────────────────────────┘
+Orchestrator Job (emptyDir)
+┌──────────────────────────────────────────┐
+│ clone_repository()                       │
+│   └→ /tmp/autodoc_xxx/                   │
+│                                          │
+│ discover_autodoc_configs                 │
+│   └→ [scope_a, scope_b]                 │
+│                                          │
+│ scope_processing_flow(scope_a, repo_path)│  ← in-process
+│ scope_processing_flow(scope_b, repo_path)│  ← in-process
+│                                          │
+│ results available directly (same process)│
+│ pod dies → emptyDir gone                 │
+└──────────────────────────────────────────┘
 ```
 
-The orchestrator clones the repo for scope discovery (finding `.autodoc.yaml` files). Each scope Job then clones independently for processing. With 1-3 scopes per repo and `--depth 1` shallow clones, the duplication overhead is negligible.
+The orchestrator clones the repo once. Scope processing runs in-process within the same pod, sharing the cloned repository via the local filesystem path. No duplicate cloning occurs.
 
 **Workspace lifecycle is fully managed by K8s**: pod termination deletes the emptyDir. The `cleanup_workspace()` call in flow `finally` blocks remains as belt-and-suspenders. The `cleanup_orphan_workspaces` scheduled Prefect flow is **not deployed to K8s** — it is only used in the dev Docker Compose profile where pods don't manage lifecycle.
 
-**Application code change required**: `scope_processing_flow` currently receives `repo_path` (a local filesystem path). In K8s mode, it must instead receive `clone_input` (clone URL, provider, token) + `branch` and clone the repo itself at the start. In dev mode (in-process subflows), the existing `repo_path` pattern continues to work.
-
-**Rationale**: emptyDir is the simplest, most performant, and most reliable option. No infrastructure dependencies (NFS, S3), no shared state between pods, no cleanup mechanisms needed. Research showed NFS performs poorly for git workloads (many small files) and S3 FUSE mounts are fundamentally incompatible with git operations.
+**Rationale**: emptyDir is the simplest, most performant, and most reliable option. No infrastructure dependencies (NFS, S3), no shared state between pods, no cleanup mechanisms needed. In-process scope processing eliminates the need for cross-Job result transfer and duplicate clones. Research showed NFS performs poorly for git workloads (many small files) and S3 FUSE mounts are fundamentally incompatible with git operations.
 
 **Alternatives considered**:
+- Separate K8s Jobs per scope via `run_deployment()`: Original design — rejected because `run_deployment()` returns `FlowRun` status, not flow return values. Requires shared result storage to transfer `ScopeProcessingResult` between Jobs. Deferred to future change.
 - Shared RWX PVC (NFS/EFS): Rejected — poor performance for git clone (many small files), single point of failure, AWS EFS docs explicitly warn against git workloads.
 - S3 relay (tar + upload + download): Rejected — unnecessary complexity for 1-3 scopes. Adds S3 dependency.
 - In-cluster NFS server: Rejected — single point of failure, reported performance regressions, data loss risk.
@@ -304,13 +314,51 @@ For K8s deployments, set `PREFECT_API_DATABASE_MIGRATE_ON_START=false`. Migratio
 
 **Rationale**: Production DB migrations should not be coupled to application startup — they need careful sequencing, rollback plans, and may involve schema changes that require coordination.
 
+### D15: Baked-image deployment pattern (NEW)
+
+**Decision**: Flow code is baked into the `autodoc-flow` Docker image at build time. The `prefect.yaml` uses `build: []` (skip Prefect image build) and a top-level `pull: [set_working_directory: {directory: /app}]` step to tell workers where code lives inside the container. Deployments set `job_variables.image` via the `AUTODOC_FLOW_IMAGE` env var. This eliminates the need for remote code storage (Git, S3) at runtime.
+
+**Rationale**: K8s Jobs run in isolated pods without access to the source repository or shared filesystem. Baking code into the image ensures the flow code is available at a known path (`/app`) without requiring git clone, S3 download, or volume mounts at flow startup time. The `set_working_directory` pull step is Prefect's mechanism for telling the worker where to find flow code when it's already present in the image.
+
+**Deployment command**: Use `prefect deploy -n <name>` (selective) rather than `--all` to avoid deploying flows for profiles that are not active.
+
+### D16: Venv relocation fix (NEW)
+
+**Decision**: Both `Dockerfile.api` and `Dockerfile.flow` create the Python virtual environment at `/app/.venv` (the final runtime path) using `UV_PROJECT_ENVIRONMENT=/app/.venv`. Previously the venv was built at `/build/.venv` in a builder stage and copied to `/app/.venv`, which broke all shebangs (they hardcoded `/build/.venv/bin/python`). Entrypoints use `python -m` invocation as an additional safety measure against shebang issues.
+
+**Rationale**: Python virtual environments are not relocatable by default. Shebangs in installed scripts (e.g., `#!/build/.venv/bin/python`) break when the venv is moved to a different path. Building the venv at the final path from the start avoids this class of errors entirely.
+
+### D17: MCP server pre-installed in flow runner image (NEW)
+
+**Decision**: `@modelcontextprotocol/server-filesystem` is pre-installed globally in the flow runner image via `npm install -g`. Previously, `npx -y` downloaded the package at runtime, which fails in K8s pods without internet access (or in air-gapped environments).
+
+**Rationale**: K8s Jobs may run in network-restricted environments. Pre-installing the MCP server ensures it is available without runtime network access. Global installation via `npm install -g` makes the binary available on `PATH` without needing `npx`.
+
+### D18: Secret management via apply-secrets.sh (NEW)
+
+**Decision**: API key secrets are loaded from the gitignored `.env` file via `deployment/k8s/scripts/apply-secrets.sh`. The script uses `kubectl create secret --dry-run=client -o yaml | kubectl apply -f -` to create/update secrets without committing values to git. The `base/secrets/api-keys.yaml` retains `CHANGE_ME` placeholders as documentation of the required keys.
+
+**Rationale**: Secrets must not be committed to source control. The `--dry-run=client -o yaml | kubectl apply -f -` pattern is idempotent (creates or updates) and avoids "already exists" errors. The `.env` file is gitignored and contains the actual secret values. The placeholder YAML in base serves as a template showing which keys are expected.
+
+### D19: PREFECT_UI_API_URL for dev-k8s dashboard (NEW)
+
+**Decision**: The dev-k8s overlay patches the Prefect API deployment with `PREFECT_UI_API_URL=http://localhost:4200/api`. This tells the browser-side Prefect dashboard JavaScript to reach the API via the port-forwarded localhost URL instead of the in-cluster service hostname.
+
+**Rationale**: The Prefect dashboard is a single-page application that makes API calls from the user's browser. Without this setting, the dashboard JavaScript would attempt to reach the Prefect API via the in-cluster hostname (e.g., `http://prefect-api:4200/api`), which is unreachable from the developer's browser. Setting `PREFECT_UI_API_URL` to `http://localhost:4200/api` ensures the browser-side requests go through `kubectl port-forward`.
+
+### D20: Prefect client/server version alignment (NEW)
+
+**Decision**: The Prefect client version in the flow runner image MUST match the Prefect server version. Both must be pinned to the same version.
+
+**Rationale**: A version mismatch between the Prefect client (in the flow runner image) and the Prefect server causes 422 errors when creating task runs. This happens because serialization formats differ between versions — the server rejects payloads from a client running a different version. Pinning both to the same version prevents these errors.
+
 ## Risks / Trade-offs
 
 **[Risk] TTL controller race condition** → The cleanup CronJob runs every 5 minutes, so successful Jobs may persist up to ~10 minutes. Acceptable trade-off vs. complexity of event-driven cleanup.
 
 **[Risk] Work pool base job template drift** → Base job templates are configured in Prefect (not in K8s manifests). If someone modifies them via Prefect UI, they'll drift from the intended configuration. → Mitigation: Provide templates as JSON files in the repo; apply via setup script in CI/CD.
 
-**[Risk] Resource exhaustion from parallel scope Jobs** → A large monorepo with many scopes could spawn 50+ concurrent Jobs. → Mitigation: Work pool concurrency limit (50 for k8s-pool) prevents unbounded growth. K8s resource quotas provide a hard ceiling.
+**[Risk] Resource exhaustion from parallel scope processing** → A large monorepo with many scopes could exhaust orchestrator pod resources since scopes run in-process (D13 AMENDED). → Mitigation: Orchestrator pod resource limits prevent node exhaustion. Work pool concurrency limit (10 for orchestrator-pool) bounds concurrent orchestrator Jobs. Future change to fan out scope processing to separate K8s Jobs would distribute load.
 
 **[Risk] Redis single point of failure** → In dev-k8s profile, Redis runs in Docker without persistence. → Mitigation: Acceptable for dev. Prod uses managed Redis with replication.
 
@@ -326,17 +374,27 @@ For K8s deployments, set `PREFECT_API_DATABASE_MIGRATE_ON_START=false`. Migratio
 
 **[Trade-off] Retry re-executes entire flow** → Without task result caching, retries redo all work including previously succeeded pages. Acceptable for 1-3 scopes per repo. Can be optimized later with shared result storage + `cache_policy=INPUTS + TASK_SOURCE`.
 
+**[Risk] Prefect client/server version mismatch** → Different Prefect versions between the flow runner image and the Prefect server cause 422 errors on task run creation due to serialization format differences (D20). → Mitigation: Pin both to the same version and validate in CI.
+
+**[Risk] asyncpg SSL incompatibility in dev** → The `prefecthq/prefect:3-latest` image bundles asyncpg 0.30+ which defaults to SSL, breaking connections to local PostgreSQL without SSL (D2, D12b AMENDED). → Mitigation: Use `3-python3.11` image for dev Docker Compose and worker Dockerfile.
+
+**[Trade-off] In-process scope processing limits parallelism** → Scope processing runs sequentially within the orchestrator pod (D13 AMENDED) rather than as parallel K8s Jobs. → Acceptable for 1-3 scopes per repo. Fan-out to separate K8s Jobs deferred until cross-Job result serialization is solved.
+
+**[Trade-off] Baked image requires rebuild for code changes** → Flow code is baked into the Docker image (D15), so any code change requires an image rebuild + redeploy. → Acceptable for CI/CD workflows. Dev Docker Compose uses volume mounts for hot reload.
+
 ## Migration Plan
 
-1. **Update Docker Compose** — Add Redis, update Prefect server env vars (combined mode for dev).
-2. **Update Dockerfile.worker** — Add `prefect-kubernetes` package.
+1. **Update Docker Compose** — Add Redis, update Prefect server to use `3-python3.11` in combined mode (without Redis env vars) for dev.
+2. **Update Dockerfiles** — Add `prefect-kubernetes` to worker. Fix venv relocation in api and flow images (D16). Pre-install MCP server in flow image (D17). Ensure Prefect client version matches server (D20).
 3. **Refactor `_submit_flow()`** — Add `run_deployment()` path for K8s.
-4. **Build and push Docker images** — Tag with commit SHA.
+4. **Build Docker images** — Build api, worker, and flow images. Tag with commit SHA for prod, `latest` for dev-k8s.
+5. **Apply secrets** — Run `deployment/k8s/scripts/apply-secrets.sh` to load API keys from `.env` into K8s Secrets (D18). Must be done before deploying.
 6. **Provision external services** (prod) — PostgreSQL + Redis.
-7. **Apply K8s manifests** — `kubectl apply -k deployment/k8s/overlays/prod`
-8. **Configure Prefect work pools** — Create pools with base job templates.
-9. **Deploy Prefect flows** — `prefect deploy --all` with `AUTODOC_FLOW_DEPLOYMENT_PREFIX=prod`.
-10. **Verify** — Create a test job via API, observe K8s Job creation, scope fan-out, and cleanup.
+7. **Apply K8s manifests** — `kubectl apply -k deployment/k8s/overlays/dev-k8s` or `deployment/k8s/overlays/prod`.
+8. **Configure Prefect work pools** — Create pools with base job templates (respecting D6 AMENDED requirements: `completions`, `parallelism`, container name `prefect-job`, config-level `namespace`, `imagePullPolicy`).
+9. **Set up port-forwards** (dev-k8s) — `kubectl port-forward` for Prefect API (4200) and application API (8080). Required for dashboard access (D19).
+10. **Deploy Prefect flows** — `prefect deploy -n <name>` (selective, NOT `--all`) with appropriate `AUTODOC_FLOW_DEPLOYMENT_PREFIX` (D15).
+11. **Verify** — Create a test job via API, observe K8s Job creation, in-process scope processing, and cleanup.
 
 **Rollback**: Delete namespace (`kubectl delete namespace autodoc`) removes all K8s resources. Database and Redis are external and unaffected.
 

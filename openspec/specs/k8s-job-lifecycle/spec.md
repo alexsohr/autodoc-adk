@@ -16,44 +16,36 @@ The system SHALL define a Kubernetes Job template used by Prefect work pools to 
 - **THEN** it SHALL receive environment variables from the `autodoc-config` ConfigMap, `autodoc-db-credentials` Secret, `autodoc-api-keys` Secret, and `PREFECT_API_URL` pointing to the in-cluster Prefect API Service
 
 ### Requirement: Per-Job repository clone with emptyDir
-Each flow runner K8s Job SHALL clone the repository independently into an `emptyDir` volume. No shared filesystem is used between Jobs.
+Each flow runner K8s Job SHALL clone the repository into an `emptyDir` volume. Scope processing runs in-process within the orchestrator Job (D13 AMENDED).
 
-#### Scenario: Orchestrator Job clones for scope discovery
+#### Scenario: Orchestrator Job clones for scope discovery and processing
 - **WHEN** an orchestrator flow runner Job starts
-- **THEN** it SHALL clone the repository with `--depth 1` into an `emptyDir`-backed directory, discover `.autodoc.yaml` scope configurations, and pass `clone_input` parameters (not filesystem paths) to scope Jobs via `run_deployment()`
+- **THEN** it SHALL clone the repository with `--depth 1` into an `emptyDir`-backed directory, discover `.autodoc.yaml` scope configurations, and process all scopes in-process using the local `repo_path`
 
-#### Scenario: Scope Job clones independently
-- **WHEN** a scope processing flow runner Job starts in K8s mode
-- **THEN** it SHALL clone the repository with `--depth 1` into its own `emptyDir`-backed directory, independent of the orchestrator's clone
+#### Scenario: Scope processing runs in-process (AMENDED)
+- **WHEN** scope processing is invoked by the orchestrator flow
+- **THEN** `scope_processing_flow` SHALL run in-process within the orchestrator K8s Job (not as a separate K8s Job), receiving the orchestrator's `repo_path` directly. This applies to ALL deployment profiles (dev, dev-k8s, prod). The original design of dispatching scopes via `run_deployment()` is deferred because `run_deployment()` returns a `FlowRun` status object, not the flow's return value (`ScopeProcessingResult`).
 
 #### Scenario: Workspace auto-cleanup on pod termination
 - **WHEN** a flow runner K8s Job pod terminates (success or failure)
 - **THEN** the `emptyDir` volume and all cloned repository data SHALL be automatically deleted by Kubernetes
 
-#### Scenario: Dev mode preserves existing behavior
-- **WHEN** scope processing runs in dev mode (in-process subflows via `asyncio.create_task`)
-- **THEN** the orchestrator's cloned `repo_path` SHALL be passed directly to scope processing (no re-clone needed)
+### Requirement: scope_processing_flow receives repo_path (AMENDED)
+The `scope_processing_flow` SHALL receive a local filesystem `repo_path` parameter in all deployment profiles, since it runs in-process within the orchestrator Job.
 
-### Requirement: scope_processing_flow accepts clone_input in K8s mode
-The `scope_processing_flow` SHALL accept repository clone parameters instead of a filesystem path when running as a separate K8s Job.
-
-#### Scenario: K8s mode receives clone_input
-- **WHEN** `scope_processing_flow` is invoked via `run_deployment()` in K8s mode
-- **THEN** it SHALL receive `clone_input` (url, provider, access_token) and `branch` parameters, clone the repository at the start of execution, and use the local clone path for all downstream tasks
-
-#### Scenario: Dev mode receives repo_path
-- **WHEN** `scope_processing_flow` is invoked as an in-process subflow in dev mode
-- **THEN** it SHALL receive `repo_path` directly and skip cloning
+#### Scenario: All modes receive repo_path
+- **WHEN** `scope_processing_flow` is invoked by the orchestrator flow in any deployment profile (dev, dev-k8s, prod)
+- **THEN** it SHALL receive `repo_path` directly from the orchestrator's clone and skip cloning. The original design of receiving `clone_input` for K8s mode is deferred along with separate K8s Job dispatch (D13 AMENDED).
 
 ### Requirement: cleanup_orphan_workspaces not deployed to K8s
 The `cleanup_orphan_workspaces` scheduled Prefect flow SHALL NOT be deployed to K8s environments since emptyDir volumes handle workspace lifecycle automatically.
 
 #### Scenario: Prod Prefect deployments exclude orphan cleanup
-- **WHEN** `prefect deploy --all` is run with `AUTODOC_FLOW_DEPLOYMENT_PREFIX=prod`
-- **THEN** the `prod-cleanup` deployment for `cleanup_orphan_workspaces` SHALL be removed from `prefect.yaml` or excluded from K8s work pools
+- **WHEN** Prefect flows are deployed with `prefect deploy -n <name>` (selective deployment, D15)
+- **THEN** the `cleanup_orphan_workspaces` deployment SHALL NOT be included in the deployed set for K8s work pools
 
 #### Scenario: Dev cleanup retained
-- **WHEN** `prefect deploy --all` is run with `AUTODOC_FLOW_DEPLOYMENT_PREFIX=dev`
+- **WHEN** Prefect flows are deployed for the dev profile
 - **THEN** the `dev-cleanup` deployment for `cleanup_orphan_workspaces` SHALL remain active for Docker Compose environments
 
 ### Requirement: Successful Job cleanup
@@ -89,9 +81,9 @@ The system SHALL use Prefect's `run_deployment()` to dispatch flow runs in K8s e
 - **WHEN** a user calls `POST /jobs/{id}/retry` for a FAILED job and `AUTODOC_FLOW_DEPLOYMENT_PREFIX` is `dev`
 - **THEN** `_submit_flow()` SHALL invoke the flow directly via `asyncio.create_task()` as it does today
 
-#### Scenario: Retry for scope-level failure
+#### Scenario: Retry for scope-level failure (AMENDED)
 - **WHEN** a full_generation flow run fails due to a scope_processing_flow failure and is retried
-- **THEN** a new orchestrator Job SHALL be created which fans out scope processing as new K8s Jobs, re-executing all tasks from scratch (task result caching is deferred to a future change)
+- **THEN** a new orchestrator Job SHALL be created which clones the repository and re-processes all scopes in-process, re-executing all tasks from scratch (task result caching is deferred to a future change). Scope processing does NOT fan out to separate K8s Jobs (D13 AMENDED).
 
 ### Requirement: Job cleanup CronJob
 The system SHALL deploy a Kubernetes CronJob that implements the differential cleanup policy for succeeded Jobs.

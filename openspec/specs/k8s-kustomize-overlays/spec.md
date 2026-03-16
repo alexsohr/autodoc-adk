@@ -26,6 +26,10 @@ The system SHALL provide a dev-k8s overlay that configures the deployment for hy
 - **WHEN** the dev-k8s overlay is applied
 - **THEN** the Secret patches SHALL configure PostgreSQL and Redis connection strings pointing to the host machine (e.g., `host.docker.internal` or configurable host) where Docker Compose services are running
 
+#### Scenario: PREFECT_UI_API_URL patch (NEW — D19)
+- **WHEN** the dev-k8s overlay is applied
+- **THEN** it SHALL patch the Prefect API deployment with `PREFECT_UI_API_URL=http://localhost:4200/api` so the browser-side dashboard JavaScript reaches the API via `kubectl port-forward` instead of the in-cluster hostname
+
 ### Requirement: Prod overlay
 The system SHALL provide a prod overlay that configures the deployment for production with external managed services.
 
@@ -68,11 +72,15 @@ The system SHALL provide Secret manifests with placeholder values that MUST be r
 
 #### Scenario: Placeholder secrets in base
 - **WHEN** the base Secret manifests are inspected
-- **THEN** they SHALL contain clearly marked placeholder values (e.g., `CHANGE_ME`) for all sensitive fields with comments indicating what each value should be
+- **THEN** they SHALL contain clearly marked placeholder values (e.g., `CHANGE_ME`) for all sensitive fields as documentation of required keys
 
 #### Scenario: Overlay secret patches
 - **WHEN** an overlay is applied
 - **THEN** it MAY patch Secret values via Kustomize `secretGenerator` or strategic merge patches, or operators MAY apply Secrets separately via CI/CD or External Secrets Operator
+
+#### Scenario: apply-secrets.sh script (NEW — D18)
+- **WHEN** secrets need to be loaded into K8s before deployment
+- **THEN** the operator SHALL run `deployment/k8s/scripts/apply-secrets.sh` which reads API keys from the gitignored `.env` file and creates/updates K8s Secrets using `kubectl create secret --dry-run=client -o yaml | kubectl apply -f -` (idempotent). This MUST be run before applying K8s manifests.
 
 ### Requirement: Resource quota per namespace
 The system SHALL define a ResourceQuota for the `autodoc` namespace to bound total resource consumption.
@@ -85,9 +93,31 @@ The system SHALL define a ResourceQuota for the `autodoc` namespace to bound tot
 - **WHEN** the prod overlay is applied
 - **THEN** the ResourceQuota SHALL allow sufficient resources for the expected concurrent workload: at least 10 orchestrator Jobs + 50 scope Jobs + long-running Deployments
 
+### Requirement: Selective Prefect deployment (NEW — D15)
+The system SHALL deploy Prefect flows selectively rather than deploying all flows at once.
+
+#### Scenario: Selective deploy command
+- **WHEN** Prefect flows are deployed to a K8s environment
+- **THEN** the operator SHALL use `prefect deploy -n <name>` to deploy specific flows for the active profile, NOT `prefect deploy --all` which would deploy flows for all profiles including inactive ones
+
+#### Scenario: Image builds required before deployment
+- **WHEN** Prefect flows are deployed to K8s
+- **THEN** Docker images (api, worker, flow) MUST be built before deployment since flow code is baked into the image (D15)
+
+### Requirement: Dev-k8s port-forward setup (NEW — D19)
+The system SHALL require port-forwards for dev-k8s dashboard and API access.
+
+#### Scenario: Port-forward for Prefect dashboard
+- **WHEN** the dev-k8s overlay is deployed
+- **THEN** the operator SHALL set up `kubectl port-forward` for the Prefect API service (port 4200) to enable dashboard access from the browser via `http://localhost:4200`
+
+#### Scenario: Port-forward for application API
+- **WHEN** the dev-k8s overlay is deployed
+- **THEN** the operator SHALL set up `kubectl port-forward` for the application API service (port 8080) to enable API access from the host
+
 ### Requirement: Directory structure
 The system SHALL organize all Kubernetes manifests under `deployment/k8s/` with a clear directory hierarchy.
 
 #### Scenario: Directory layout
 - **WHEN** the `deployment/k8s/` directory is listed
-- **THEN** it SHALL contain: `base/` (core manifests + `kustomization.yaml`), `overlays/dev-k8s/` (hybrid dev patches + `kustomization.yaml`), `overlays/prod/` (production patches + `kustomization.yaml`), and `job-templates/` (Prefect work pool base job template JSON files)
+- **THEN** it SHALL contain: `base/` (core manifests + `kustomization.yaml`), `overlays/dev-k8s/` (hybrid dev patches + `kustomization.yaml`), `overlays/prod/` (production patches + `kustomization.yaml`), `job-templates/` (Prefect work pool base job template JSON files), and `scripts/` (operational scripts including `apply-secrets.sh`)
