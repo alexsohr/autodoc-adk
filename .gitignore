@@ -27,6 +27,8 @@ ENV/
 *.swp
 *.swo
 *~
+.ruff_cache/
+.serena
 
 # OS
 .DS_Store
