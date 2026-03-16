@@ -218,28 +218,46 @@ All services have health checks and dependency ordering -- the API and worker wa
 
 #### Kubernetes (dev-k8s and prod profiles)
 
-For K8s deployment, manifests are organized with Kustomize under `deployment/k8s/`:
+For K8s deployment, manifests are organized with Kustomize under `deployment/k8s/`. Quick start for dev-k8s:
 
 ```bash
-# Dev-k8s: Docker infra + K8s application
-cd deployment/docker && docker compose -f docker-compose.dev.yml up -d
+# 1. Start infrastructure (PostgreSQL + Redis)
+cd deployment/docker && docker compose -f docker-compose.dev.yml up -d && cd ../..
+
+# 2. Build images (flow code baked in — no remote code storage needed)
+docker build -t autodoc-api:latest -f deployment/docker/Dockerfile.api .
+docker build -t autodoc-worker:latest -f deployment/docker/Dockerfile.worker .
+docker build -t autodoc-flow:latest -f deployment/docker/Dockerfile.flow .
+
+# 3. Apply K8s manifests
 kubectl apply -k deployment/k8s/overlays/dev-k8s
 
-# Production: full K8s with external managed services
-kubectl apply -k deployment/k8s/overlays/prod
+# 4. Apply API key secrets from .env (values never committed to git)
+./deployment/k8s/scripts/apply-secrets.sh
+
+# 5. Port-forwards
+kubectl port-forward -n autodoc svc/prefect-api 4200:4200 &
+kubectl port-forward -n autodoc svc/autodoc-api 8080:8080 &
+
+# 6. Set up work pools + deploy flows
+./deployment/k8s/scripts/setup-work-pools.sh
+PREFECT_API_URL=http://localhost:4200/api AUTODOC_FLOW_IMAGE=autodoc-flow:latest \
+  prefect deploy -n dev-k8s-full-generation -n dev-k8s-scope-processing -n dev-k8s-incremental
 ```
 
 In K8s mode, each documentation generation job runs as an isolated K8s Job with its own `emptyDir` workspace. The Prefect server is split into a scalable API server (`--no-services`) and a singleton background services instance. Two Prefect workers poll separate work pools (`orchestrator-pool` and `k8s-pool`) to prevent deadlock.
 
-See [`deployment/k8s/README.md`](deployment/k8s/README.md) for detailed K8s setup instructions, work pool configuration, secret management, and troubleshooting.
+See [`deployment/k8s/README.md`](deployment/k8s/README.md) for the full step-by-step guide, production deployment, and troubleshooting.
 
 **Docker images:**
 
-| Image | Base | Purpose |
-|-------|------|---------|
-| API | python:3.11-slim | Serves REST API |
-| Worker | prefecthq/prefect:3-python3.11 | Polls Prefect Server, launches flow runners (includes `prefect-kubernetes`) |
-| Flow Runner | python:3.11-slim + Node.js 18 | Executes documentation generation |
+| Image | Dockerfile | Purpose |
+|-------|-----------|---------|
+| `autodoc-api` | `Dockerfile.api` | Serves REST API |
+| `autodoc-worker` | `Dockerfile.worker` | Polls Prefect Server, launches flow runners (includes `prefect-kubernetes`) |
+| `autodoc-flow` | `Dockerfile.flow` | Executes documentation generation (all AI libs + Node.js + MCP server baked in) |
+
+**Secrets:** K8s Secret manifests in git use `CHANGE_ME` placeholders. Real API keys are loaded from `.env` (gitignored) via `./deployment/k8s/scripts/apply-secrets.sh`, which creates the K8s secret without committing values to source control.
 
 **Database:** A single PostgreSQL instance hosts two databases -- `autodoc` (application data with pgvector) and `prefect` (Prefect metadata, auto-managed). The `init-db.sql` script creates both on first startup.
 
