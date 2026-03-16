@@ -85,16 +85,24 @@ async def _submit_flow(
             deployment_name,
         )
 
-        await run_deployment(
-            name=f"{flow_name}/{deployment_name}",
-            parameters={
-                "repository_id": str(repository_id),
-                "job_id": str(job_id),
-                "branch": branch,
-                "dry_run": dry_run,
-            },
-            timeout=0,  # non-blocking: fire and forget
-        )
+        try:
+            await run_deployment(
+                name=f"{flow_name}/{deployment_name}",
+                parameters={
+                    "repository_id": str(repository_id),
+                    "job_id": str(job_id),
+                    "branch": branch,
+                    "dry_run": dry_run,
+                },
+                timeout=0,  # non-blocking: fire and forget
+            )
+        except Exception:
+            logger.exception(
+                "Failed to dispatch flow via run_deployment: %s/%s",
+                flow_name,
+                deployment_name,
+            )
+            raise
 
 
 def _flow_task_done(task: asyncio.Task) -> None:

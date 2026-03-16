@@ -41,23 +41,33 @@ Infrastructure (PostgreSQL + Redis) in Docker, application on K8s.
    kubectl apply -k deployment/k8s/overlays/dev-k8s
    ```
 
-4. Start a port-forward to the Prefect API (needed for CLI commands and the dashboard):
+4. Apply API key secrets from `.env` (values never committed to git):
    ```bash
-   kubectl port-forward -n autodoc svc/prefect-api 4200:4200 &
+   ./deployment/k8s/scripts/apply-secrets.sh
    ```
 
-5. Set up work pools:
+5. Start port-forwards (needed for CLI, dashboard, and API access):
+   ```bash
+   kubectl port-forward -n autodoc svc/prefect-api 4200:4200 &   # Prefect dashboard + CLI
+   kubectl port-forward -n autodoc svc/autodoc-api 8080:8080 &   # AutoDoc API + Swagger UI
+   ```
+
+6. Set up work pools:
    ```bash
    ./deployment/k8s/scripts/setup-work-pools.sh
    ```
 
-6. Deploy Prefect flows (only the dev-k8s deployments, not `--all`):
+7. Deploy Prefect flows (only the dev-k8s deployments, not `--all`):
    ```bash
    PREFECT_API_URL=http://localhost:4200/api \
+     AUTODOC_FLOW_IMAGE=autodoc-flow:latest \
      prefect deploy -n dev-k8s-full-generation -n dev-k8s-scope-processing -n dev-k8s-incremental
    ```
 
-7. Open the Prefect dashboard at http://localhost:4200/dashboard.
+8. Verify:
+   - Prefect dashboard: http://localhost:4200/dashboard
+   - AutoDoc API (Swagger UI): http://localhost:8080/docs
+   - Health check: `curl http://localhost:8080/health`
 
 #### Networking (dev-k8s)
 

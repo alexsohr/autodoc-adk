@@ -7,11 +7,6 @@
         "type": "string",
         "default": "autodoc-flow:latest"
       },
-      "namespace": {
-        "title": "Namespace",
-        "type": "string",
-        "default": "autodoc"
-      },
       "service_account_name": {
         "title": "Service Account Name",
         "type": "string",
@@ -25,11 +20,12 @@
     }
   },
   "job_configuration": {
+    "namespace": "autodoc",
     "job_manifest": {
       "apiVersion": "batch/v1",
       "kind": "Job",
       "metadata": {
-        "namespace": "{{ namespace }}",
+        "namespace": "autodoc",
         "labels": {
           "app": "autodoc-flow-runner",
           "pool": "k8s-pool",
@@ -39,6 +35,8 @@
       "spec": {
         "ttlSecondsAfterFinished": 86400,
         "backoffLimit": 0,
+        "completions": 1,
+        "parallelism": 1,
         "template": {
           "metadata": {
             "labels": {
@@ -51,8 +49,9 @@
             "restartPolicy": "Never",
             "containers": [
               {
-                "name": "flow-runner",
+                "name": "prefect-job",
                 "image": "{{ image }}",
+                "imagePullPolicy": "IfNotPresent",
                 "resources": {
                   "requests": {
                     "cpu": "2",

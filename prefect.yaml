@@ -21,11 +21,11 @@ definitions:
     orchestrator: &orchestrator_pool
       name: orchestrator-pool
       job_variables:
-        image: "{{ $AUTODOC_FLOW_IMAGE | default('autodoc-flow:latest') }}"
+        image: "{{ $AUTODOC_FLOW_IMAGE }}"
     k8s: &k8s_pool
       name: k8s-pool
       job_variables:
-        image: "{{ $AUTODOC_FLOW_IMAGE | default('autodoc-flow:latest') }}"
+        image: "{{ $AUTODOC_FLOW_IMAGE }}"
     local: &local_pool
       name: local-dev
 

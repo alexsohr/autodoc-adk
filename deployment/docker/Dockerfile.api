@@ -26,7 +26,8 @@ COPY pyproject.toml uv.lock ./
 # --frozen  : use the exact versions from uv.lock (no resolution)
 # --no-dev  : skip [project.optional-dependencies] dev group
 # --no-editable : install the project package as a regular package
-RUN uv venv /build/.venv && \
+ENV UV_PROJECT_ENVIRONMENT=/app/.venv
+RUN uv venv /app/.venv && \
     uv sync --frozen --no-dev --no-install-project
 
 # Copy application source code and README (required by hatchling for package metadata)
@@ -57,7 +58,7 @@ RUN groupadd --gid 1000 appuser && \
 WORKDIR /app
 
 # Copy the fully-built virtualenv from the builder stage
-COPY --from=builder /build/.venv /app/.venv
+COPY --from=builder /app/.venv /app/.venv
 
 # Copy application source code
 COPY --from=builder /build/src /app/src
