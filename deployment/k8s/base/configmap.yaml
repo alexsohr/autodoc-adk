@@ -1,0 +1,76 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: autodoc-config
+  namespace: autodoc
+  labels:
+    app.kubernetes.io/part-of: autodoc
+data:
+  # Prefect
+  PREFECT_API_URL: "http://prefect-api:4200/api"
+  AUTODOC_FLOW_DEPLOYMENT_PREFIX: "prod"
+
+  # Application
+  APP_COMMIT_SHA: ""
+
+  # Default LLM Model
+  DEFAULT_MODEL: "gemini-2.5-flash"
+
+  # Per-agent model overrides (empty = falls back to DEFAULT_MODEL)
+  STRUCTURE_GENERATOR_MODEL: ""
+  STRUCTURE_CRITIC_MODEL: ""
+  PAGE_GENERATOR_MODEL: ""
+  PAGE_CRITIC_MODEL: ""
+  README_GENERATOR_MODEL: ""
+  README_CRITIC_MODEL: ""
+
+  # Embedding
+  EMBEDDING_MODEL: "text-embedding-3-large"
+  EMBEDDING_DIMENSIONS: "1024"
+  EMBEDDING_BATCH_SIZE: "100"
+
+  # Contextual enrichment
+  CONTEXT_MODEL: ""
+  CONTEXT_MAX_TOKENS: "100"
+  CONTEXT_CONCURRENCY: "10"
+  CONTEXT_ENABLED: "true"
+
+  # Quality thresholds
+  QUALITY_THRESHOLD: "7.0"
+  MAX_AGENT_ATTEMPTS: "3"
+  STRUCTURE_COVERAGE_CRITERION_FLOOR: "5.0"
+  PAGE_ACCURACY_CRITERION_FLOOR: "5.0"
+  PAGE_GENERATION_CONCURRENCY: "3"
+
+  # Clone directory (must match emptyDir mount point in job templates)
+  CLONE_DIR: "/tmp/autodoc-workspaces"
+
+  # Repository size limits
+  MAX_REPO_SIZE: "524288000"
+  MAX_TOTAL_FILES: "5000"
+  MAX_FILE_SIZE: "1048576"
+
+  # Chunk settings
+  CHUNK_MAX_TOKENS: "512"
+  CHUNK_OVERLAP_TOKENS: "50"
+  CHUNK_MIN_TOKENS: "50"
+
+  # Session archival
+  SESSION_ARCHIVE_BUCKET: ""
+
+  # OpenTelemetry
+  OTEL_ENABLED: "false"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://localhost:4317"
+  OTEL_SERVICE_NAME: "autodoc-adk"
+
+  # Database connection pool
+  DB_POOL_SIZE: "5"
+  DB_MAX_OVERFLOW: "10"
+  DB_POOL_TIMEOUT: "30"
+  DB_POOL_RECYCLE: "3600"
+
+  # Prefect Redis messaging (constants — host/port come from Secret)
+  PREFECT_MESSAGING_BROKER: "prefect_redis.messaging"
+  PREFECT_MESSAGING_CACHE: "prefect_redis.messaging"
+  PREFECT_SERVER_EVENTS_CAUSAL_ORDERING: "prefect_redis.ordering"
+  PREFECT_SERVER_CONCURRENCY_LEASE_STORAGE: "prefect_redis.lease_storage"

@@ -34,34 +34,75 @@ async def _submit_flow(
     branch: str,
     dry_run: bool,
 ) -> None:
-    """Submit the appropriate Prefect flow run as a detached asyncio task.
+    """Submit the appropriate Prefect flow run.
 
-    Uses asyncio.create_task() instead of FastAPI BackgroundTasks so the
-    flow runs independently of the ASGI request lifecycle.  BackgroundTasks
-    execute inside the request scope, so uvicorn cancels them when the HTTP
-    client disconnects after receiving the response — killing the flow.
+    In dev mode (AUTODOC_FLOW_DEPLOYMENT_PREFIX == "dev"), uses
+    asyncio.create_task() to run flows in-process.
+
+    In K8s modes (dev-k8s, prod), uses Prefect's run_deployment() to
+    dispatch flow runs via Prefect workers, which create K8s Jobs.
     """
-    if mode == "incremental":
-        from src.flows.incremental_update import incremental_update_flow
+    settings = get_settings()
+    prefix = settings.AUTODOC_FLOW_DEPLOYMENT_PREFIX
 
-        coro = incremental_update_flow(
-            repository_id=repository_id,
-            job_id=job_id,
-            branch=branch,
-            dry_run=dry_run,
-        )
+    if prefix == "dev":
+        # Dev mode: run flow in-process as a detached asyncio task
+        if mode == "incremental":
+            from src.flows.incremental_update import incremental_update_flow
+
+            coro = incremental_update_flow(
+                repository_id=repository_id,
+                job_id=job_id,
+                branch=branch,
+                dry_run=dry_run,
+            )
+        else:
+            from src.flows.full_generation import full_generation_flow
+
+            coro = full_generation_flow(
+                repository_id=repository_id,
+                job_id=job_id,
+                branch=branch,
+                dry_run=dry_run,
+            )
+
+        task = asyncio.create_task(coro, name=f"flow-{mode}-{job_id}")
+        task.add_done_callback(_flow_task_done)
     else:
-        from src.flows.full_generation import full_generation_flow
+        # K8s mode: dispatch via Prefect run_deployment()
+        from prefect.deployments import run_deployment
 
-        coro = full_generation_flow(
-            repository_id=repository_id,
-            job_id=job_id,
-            branch=branch,
-            dry_run=dry_run,
+        if mode == "incremental":
+            flow_name = "incremental_update"
+            deployment_name = f"{prefix}-incremental"
+        else:
+            flow_name = "full_generation"
+            deployment_name = f"{prefix}-full-generation"
+
+        logger.info(
+            "Dispatching flow via run_deployment: %s/%s",
+            flow_name,
+            deployment_name,
         )
 
-    task = asyncio.create_task(coro, name=f"flow-{mode}-{job_id}")
-    task.add_done_callback(_flow_task_done)
+        try:
+            await run_deployment(
+                name=f"{flow_name}/{deployment_name}",
+                parameters={
+                    "repository_id": repository_id,
+                    "job_id": job_id,
+                    "branch": branch,
+                    "dry_run": dry_run,
+                },
+                timeout=0,  # non-blocking: fire and forget
+            )
+        except Exception:
+            logger.exception(
+                "Failed to dispatch flow via run_deployment: %s/%s",
+                flow_name,
+                deployment_name,
+            )
+            raise
 
 
 def _flow_task_done(task: asyncio.Task) -> None:
@@ -206,14 +247,28 @@ async def create_job(
         callback_url=body.callback_url,
     )
 
-    # 7. Submit flow as detached asyncio task
-    await _submit_flow(
-        mode=mode,
-        repository_id=body.repository_id,
-        job_id=job.id,
-        branch=branch,
-        dry_run=body.dry_run,
-    )
+    # 7. Submit flow
+    try:
+        await _submit_flow(
+            mode=mode,
+            repository_id=body.repository_id,
+            job_id=job.id,
+            branch=branch,
+            dry_run=body.dry_run,
+        )
+    except Exception as exc:
+        logger.error(
+            "Failed to submit %s flow for job %s: %s", mode, job.id, exc
+        )
+        job = await job_repo.update_status(
+            job.id,
+            "FAILED",
+            error_message=f"Flow submission failed: {exc}",
+        )
+        return JSONResponse(
+            status_code=201,
+            content=JobResponse.model_validate(job).model_dump(mode="json"),
+        )
 
     logger.info(
         "Created %s job %s for repo %s branch=%s",
@@ -595,14 +650,23 @@ async def retry_job(
         )
         mode = "full" if structure is None else "incremental"
 
-    # Re-submit flow as detached asyncio task
-    await _submit_flow(
-        mode=mode,
-        repository_id=updated.repository_id,
-        job_id=updated.id,
-        branch=updated.branch,
-        dry_run=updated.dry_run,
-    )
+    # Re-submit flow
+    try:
+        await _submit_flow(
+            mode=mode,
+            repository_id=updated.repository_id,
+            job_id=updated.id,
+            branch=updated.branch,
+            dry_run=updated.dry_run,
+        )
+    except Exception as exc:
+        logger.error("Failed to submit retry flow for job %s: %s", job_id, exc)
+        updated = await job_repo.update_status(
+            job_id,
+            "FAILED",
+            error_message=f"Flow submission failed: {exc}",
+        )
+        return JobResponse.model_validate(updated)
 
     logger.info("Retrying job %s (mode=%s)", job_id, mode)
     return JobResponse.model_validate(updated)

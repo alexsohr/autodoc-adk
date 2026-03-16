@@ -39,9 +39,30 @@ services:
       retries: 5
 
   # ---------------------------------------------------------------------------
-  # Prefect Server
+  # Redis 7
+  # ---------------------------------------------------------------------------
+  # Required by Prefect 3 for messaging, caching, event ordering, and lease
+  # storage.
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Prefect Server (combined mode for dev)
   # ---------------------------------------------------------------------------
   # Runs the Prefect 3 orchestration server backed by PostgreSQL (not SQLite).
+  # Combined mode (without --no-services) for dev simplicity.
+  # Uses 3-python3.11 image — the 3-latest image bundles asyncpg 0.30+ which
+  # defaults to SSL and fails against the local PostgreSQL container.
+  # Redis is available but optional in combined mode (Prefect falls back to
+  # in-memory messaging). K8s deployments use 3-latest with prefect-redis.
   # Prefect auto-manages its own schema via Alembic on startup.
   # ---------------------------------------------------------------------------
   prefect-server:

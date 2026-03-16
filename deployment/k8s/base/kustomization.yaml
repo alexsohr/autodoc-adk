@@ -1,0 +1,30 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: autodoc
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - resource-quota.yaml
+  # Secrets
+  - secrets/db-credentials.yaml
+  - secrets/api-keys.yaml
+  - secrets/redis-credentials.yaml
+  # RBAC
+  - rbac/worker-rbac.yaml
+  - rbac/cleanup-rbac.yaml
+  # Prefect Server
+  - prefect/api-deployment.yaml
+  - prefect/api-service.yaml
+  - prefect/background-services-deployment.yaml
+  # Prefect Workers
+  - workers/orchestrator-worker.yaml
+  - workers/scope-worker.yaml
+  # API Server
+  - api/deployment.yaml
+  - api/service.yaml
+  # Ingress
+  - ingress.yaml
+  # Cleanup
+  - cleanup/cronjob.yaml

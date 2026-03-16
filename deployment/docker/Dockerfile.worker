@@ -4,10 +4,8 @@ LABEL maintainer="autodoc-adk"
 LABEL component="prefect-worker"
 LABEL description="Lightweight Prefect 3 worker that polls for flow runs and delegates execution to flow runner containers"
 
-# The worker only needs the base Prefect image — no additional Python
-# dependencies are installed. It communicates with Prefect Server over HTTP
-# and launches flow runner containers (K8s jobs or local processes) without
-# executing flow code itself.
+# Install prefect-kubernetes for K8s work pool support (creating K8s Jobs)
+RUN pip install --no-cache-dir prefect-kubernetes
 
 ENV PREFECT_API_URL="http://prefect-server:4200/api"
 ENV PREFECT_WORK_POOL="local-dev"

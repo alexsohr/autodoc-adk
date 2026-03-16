@@ -383,6 +383,8 @@ async def incremental_update_flow(
         branch: Target branch.
         dry_run: If True, skip PR creation and session archival.
     """
+    repository_id = uuid.UUID(str(repository_id))
+    job_id = uuid.UUID(str(job_id))
     session_factory = get_session_factory()
     repo_path: str | None = None
     callback_url: str | None = None

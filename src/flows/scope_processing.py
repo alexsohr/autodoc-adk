@@ -14,7 +14,7 @@ from src.flows.tasks.embeddings import generate_embeddings_task
 from src.flows.tasks.pages import generate_pages
 from src.flows.tasks.readme import distill_readme
 from src.flows.tasks.structure import extract_structure
-from src.services.config_loader import AutodocConfig
+from src.services.config_loader import AutodocConfig, autodoc_config_from_dict
 
 logger = logging.getLogger(__name__)
 
@@ -62,8 +62,9 @@ async def scope_processing_flow(
     branch: str,
     scope_path: str,
     commit_sha: str,
-    repo_path: str,
-    config: AutodocConfig,
+    repo_path: str | None = None,
+    clone_input: dict | None = None,
+    config: AutodocConfig | dict | None = None,
     dry_run: bool = False,
 ) -> ScopeProcessingResult:
     """Process a single documentation scope.
@@ -73,20 +74,74 @@ async def scope_processing_flow(
     If structure quality gate fails (below_minimum_floor), raises QualityError
     to skip page generation.
 
+    In K8s mode (clone_input provided, repo_path is None), clones the repo
+    at the start of execution. In dev mode, repo_path is passed directly.
+
     Args:
         repository_id: Repository UUID.
         job_id: Job UUID.
         branch: Target branch.
         scope_path: Documentation scope path (e.g. ".").
         commit_sha: Current commit SHA.
-        repo_path: Path to cloned repository.
-        config: AutodocConfig for this scope.
+        repo_path: Path to cloned repository (dev mode).
+        clone_input: Dict with url, provider, access_token (K8s mode).
+        config: AutodocConfig for this scope (or dict when deserialized from K8s).
         dry_run: If True, only extract structure (skip pages + readme).
 
     Returns:
         ScopeProcessingResult with structure_result, page_results, readme_result,
         wiki_structure_id, embedding_count.
     """
+    repository_id = uuid.UUID(str(repository_id))
+    job_id = uuid.UUID(str(job_id))
+
+    from src.flows.schemas import CloneInput
+
+    # If config was passed as a dict (from K8s run_deployment serialization),
+    # reconstruct the AutodocConfig with nested dataclasses (style, readme, etc.)
+    if isinstance(config, dict):
+        config = autodoc_config_from_dict(config)
+
+    # K8s mode: clone repo at start of execution
+    cloned_here = False
+    if repo_path is None and clone_input is not None:
+        from src.flows.tasks.clone import clone_repository
+
+        ci = CloneInput(**clone_input) if isinstance(clone_input, dict) else clone_input
+        repo_path, _ = await clone_repository(clone_input=ci, branch=branch)
+        cloned_here = True
+    elif repo_path is None:
+        raise ValueError("Either repo_path or clone_input must be provided")
+
+    try:
+        return await _scope_processing_impl(
+            repository_id=repository_id,
+            job_id=job_id,
+            branch=branch,
+            scope_path=scope_path,
+            commit_sha=commit_sha,
+            repo_path=repo_path,
+            config=config,
+            dry_run=dry_run,
+        )
+    finally:
+        if cloned_here and repo_path:
+            from src.flows.tasks.cleanup import cleanup_workspace
+            await cleanup_workspace(repo_path=repo_path)
+
+
+async def _scope_processing_impl(
+    *,
+    repository_id: uuid.UUID,
+    job_id: uuid.UUID,
+    branch: str,
+    scope_path: str,
+    commit_sha: str,
+    repo_path: str,
+    config: AutodocConfig,
+    dry_run: bool,
+) -> ScopeProcessingResult:
+    """Inner implementation of scope processing."""
     from src.errors import QualityError
     from src.flows.schemas import PageTaskResult, ReadmeTaskResult
     from src.flows.tasks.scan import scan_file_tree

@@ -1,0 +1,9 @@
+# Dev-k8s configuration overrides
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: autodoc-config
+  namespace: autodoc
+data:
+  AUTODOC_FLOW_DEPLOYMENT_PREFIX: "dev-k8s"
+  OTEL_ENABLED: "false"

@@ -26,11 +26,13 @@ COPY pyproject.toml uv.lock ./
 # --frozen  : use the exact versions from uv.lock (no resolution)
 # --no-dev  : skip [project.optional-dependencies] dev group
 # --no-editable : install the project package as a regular package
-RUN uv venv /build/.venv && \
+ENV UV_PROJECT_ENVIRONMENT=/app/.venv
+RUN uv venv /app/.venv && \
     uv sync --frozen --no-dev --no-install-project
 
-# Copy application source code
+# Copy application source code and README (required by hatchling for package metadata)
 COPY src/ ./src/
+COPY README.md ./
 
 # Install the project itself (hatchling wheel build) into the same venv
 RUN uv sync --frozen --no-dev --no-editable
@@ -56,7 +58,7 @@ RUN groupadd --gid 1000 appuser && \
 WORKDIR /app
 
 # Copy the fully-built virtualenv from the builder stage
-COPY --from=builder /build/.venv /app/.venv
+COPY --from=builder /app/.venv /app/.venv
 
 # Copy application source code
 COPY --from=builder /build/src /app/src
@@ -69,4 +71,4 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
 
-ENTRYPOINT ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8080"]
+ENTRYPOINT ["python", "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8080"]

@@ -1,0 +1,9 @@
+# Production configuration overrides
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: autodoc-config
+  namespace: autodoc
+data:
+  AUTODOC_FLOW_DEPLOYMENT_PREFIX: "prod"
+  PREFECT_API_DATABASE_MIGRATE_ON_START: "false"

@@ -1,0 +1,53 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: autodoc-job-cleanup
+  namespace: autodoc
+  labels:
+    app.kubernetes.io/part-of: autodoc
+    app.kubernetes.io/component: cleanup
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/part-of: autodoc
+            app.kubernetes.io/component: cleanup
+        spec:
+          serviceAccountName: autodoc-job-cleanup
+          restartPolicy: OnFailure
+          containers:
+            - name: cleanup
+              image: bitnami/kubectl:latest
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  echo "Cleaning up succeeded autodoc Jobs older than 5 minutes..."
+                  CUTOFF=$(date -u -d '5 minutes ago' '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -v-5M '+%Y-%m-%dT%H:%M:%SZ')
+                  JOBS=$(kubectl get jobs -n autodoc -l app=autodoc-flow-runner \
+                    --field-selector status.successful=1 \
+                    -o jsonpath='{range .items[*]}{.metadata.name} {.status.completionTime}{"\n"}{end}')
+                  if [ -z "$JOBS" ]; then
+                    echo "No succeeded Jobs found."
+                    exit 0
+                  fi
+                  echo "$JOBS" | while read -r NAME COMPLETION; do
+                    if [ -n "$NAME" ] && [ -n "$COMPLETION" ] && [ "$COMPLETION" \< "$CUTOFF" ]; then
+                      echo "Deleting Job $NAME (completed at $COMPLETION)"
+                      kubectl delete job -n autodoc "$NAME" --ignore-not-found
+                    fi
+                  done
+                  echo "Cleanup complete."
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 100m
+                  memory: 128Mi

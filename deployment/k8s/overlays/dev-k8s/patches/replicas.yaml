@@ -1,0 +1,40 @@
+# Single replicas for all Deployments in dev-k8s
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prefect-api
+  namespace: autodoc
+spec:
+  replicas: 1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prefect-background-services
+  namespace: autodoc
+spec:
+  replicas: 1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orchestrator-worker
+  namespace: autodoc
+spec:
+  replicas: 1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scope-worker
+  namespace: autodoc
+spec:
+  replicas: 1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: autodoc-api
+  namespace: autodoc
+spec:
+  replicas: 1

@@ -1,0 +1,111 @@
+{
+  "variables": {
+    "type": "object",
+    "properties": {
+      "image": {
+        "title": "Image",
+        "type": "string",
+        "default": "autodoc-flow:latest"
+      },
+      "service_account_name": {
+        "title": "Service Account Name",
+        "type": "string",
+        "default": "prefect-worker"
+      },
+      "flow_run_id": {
+        "title": "Flow Run ID",
+        "type": "string",
+        "default": ""
+      }
+    }
+  },
+  "job_configuration": {
+    "namespace": "autodoc",
+    "job_manifest": {
+      "apiVersion": "batch/v1",
+      "kind": "Job",
+      "metadata": {
+        "namespace": "autodoc",
+        "labels": {
+          "app": "autodoc-flow-runner",
+          "pool": "orchestrator-pool",
+          "prefect.io/flow-run-id": "{{ flow_run_id }}"
+        }
+      },
+      "spec": {
+        "ttlSecondsAfterFinished": 86400,
+        "backoffLimit": 0,
+        "completions": 1,
+        "parallelism": 1,
+        "template": {
+          "metadata": {
+            "labels": {
+              "app": "autodoc-flow-runner",
+              "pool": "orchestrator-pool"
+            }
+          },
+          "spec": {
+            "serviceAccountName": "{{ service_account_name }}",
+            "restartPolicy": "Never",
+            "containers": [
+              {
+                "name": "prefect-job",
+                "image": "{{ image }}",
+                "imagePullPolicy": "IfNotPresent",
+                "resources": {
+                  "requests": {
+                    "cpu": "1",
+                    "memory": "2Gi"
+                  },
+                  "limits": {
+                    "cpu": "2",
+                    "memory": "4Gi"
+                  }
+                },
+                "volumeMounts": [
+                  {
+                    "name": "workspaces",
+                    "mountPath": "/tmp/autodoc-workspaces"
+                  }
+                ],
+                "envFrom": [
+                  {
+                    "configMapRef": {
+                      "name": "autodoc-config"
+                    }
+                  },
+                  {
+                    "secretRef": {
+                      "name": "autodoc-api-keys"
+                    }
+                  }
+                ],
+                "env": [
+                  {
+                    "name": "DATABASE_URL",
+                    "valueFrom": {
+                      "secretKeyRef": {
+                        "name": "autodoc-db-credentials",
+                        "key": "DATABASE_URL"
+                      }
+                    }
+                  },
+                  {
+                    "name": "PREFECT_API_URL",
+                    "value": "http://prefect-api.autodoc.svc.cluster.local:4200/api"
+                  }
+                ]
+              }
+            ],
+            "volumes": [
+              {
+                "name": "workspaces",
+                "emptyDir": {}
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

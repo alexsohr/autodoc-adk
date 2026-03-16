@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: autodoc-quota
+  namespace: autodoc
+  labels:
+    app.kubernetes.io/part-of: autodoc
+spec:
+  hard:
+    requests.cpu: "64"
+    requests.memory: 128Gi
+    limits.cpu: "128"
+    limits.memory: 256Gi
+    count/jobs.batch: "100"

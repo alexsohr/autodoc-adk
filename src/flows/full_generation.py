@@ -50,6 +50,8 @@ async def full_generation_flow(
         branch: Target branch.
         dry_run: If True, skip PR creation and session archival.
     """
+    repository_id = uuid.UUID(str(repository_id))
+    job_id = uuid.UUID(str(job_id))
     session_factory = get_session_factory()
     repo_path: str | None = None
     callback_url: str | None = None
@@ -103,7 +105,11 @@ async def full_generation_flow(
         configs = await discover_autodoc_configs(repo_path=repo_path)
 
         # Step 4: Process all scopes in parallel
-        # No DB session held — child tasks can freely use the pool.
+        # Run scope processing in-process within the orchestrator.
+        # In K8s mode, the orchestrator runs as a K8s Job with the cloned
+        # repo already available. Separate K8s Jobs per scope (via
+        # run_deployment) would require result serialization infrastructure
+        # that isn't provisioned yet — deferred to a future change.
         async def _process_scope(cfg):
             return await scope_processing_flow(
                 repository_id=repository_id,
@@ -130,9 +136,11 @@ async def full_generation_flow(
         for i, result in enumerate(scope_results):
             if isinstance(result, Exception):
                 logger.error(
-                    "Scope '%s' failed: %s",
+                    "Scope '%s' failed: %s: %s",
                     configs[i].scope_path,
+                    type(result).__name__,
                     result,
+                    exc_info=result,
                 )
                 continue
 

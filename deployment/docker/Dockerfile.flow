@@ -34,10 +34,13 @@ WORKDIR /build
 COPY pyproject.toml uv.lock ./
 
 # Install all production dependencies into a virtual environment.
+# Create the venv at /app/.venv (the final runtime path) so shebangs are
+# correct after COPY to the runtime stage — no relocation issues.
 # --frozen: respect the lockfile exactly (no resolution, no network lookups)
 # --no-dev: skip dev dependencies (pytest, ruff, etc.)
 # --no-install-project: don't install the project itself yet
-RUN uv sync --frozen --no-dev --no-install-project
+ENV UV_PROJECT_ENVIRONMENT=/app/.venv
+RUN uv venv /app/.venv && uv sync --frozen --no-dev --no-install-project
 
 # ---------------------------------------------------------------------------
 # Stage 2: Runtime image
@@ -67,7 +70,8 @@ RUN apt-get update && \
 RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/* && \
-    node --version && npm --version
+    node --version && npm --version && \
+    npm install -g @modelcontextprotocol/server-filesystem
 
 # ── uv (available at runtime for ad-hoc needs) ────────────────────────────
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
@@ -77,16 +81,19 @@ RUN groupadd --gid 1000 autodoc && \
     useradd --uid 1000 --gid autodoc --create-home --shell /bin/bash autodoc
 
 # ── Python virtual environment from builder stage ─────────────────────────
-COPY --from=builder /build/.venv /app/.venv
+COPY --from=builder /app/.venv /app/.venv
 
 # ── Application code ──────────────────────────────────────────────────────
 WORKDIR /app
 
-# Dependency manifests (needed for `pip install --no-deps -e .`)
+# Dependency manifests
 COPY pyproject.toml uv.lock ./
 
 # Source code — this is where flows, agents, models, and config live
 COPY src/ ./src/
+
+# README (required by hatchling for package metadata during pip install)
+COPY README.md ./
 
 # Prefect deployment definitions
 COPY prefect.yaml ./
@@ -96,7 +103,7 @@ COPY alembic.ini ./
 
 # Install the project package into the venv (no dependency resolution,
 # only registers the package so `import src` and entry points work)
-RUN /app/.venv/bin/pip install --no-deps -e .
+RUN UV_PROJECT_ENVIRONMENT=/app/.venv uv pip install --no-deps -e .
 
 # ── Build arg: application commit SHA ─────────────────────────────────────
 # Injected by CI via: --build-arg APP_COMMIT_SHA=$(git rev-parse HEAD)

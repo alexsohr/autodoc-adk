@@ -1,0 +1,14 @@
+# Tell the Prefect UI (browser-side) to reach the API via localhost port-forward
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prefect-api
+  namespace: autodoc
+spec:
+  template:
+    spec:
+      containers:
+        - name: prefect-api
+          env:
+            - name: PREFECT_UI_API_URL
+              value: "http://localhost:4200/api"
