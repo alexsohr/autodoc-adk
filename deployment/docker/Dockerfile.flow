@@ -82,7 +82,7 @@ COPY --from=builder /build/.venv /app/.venv
 # ── Application code ──────────────────────────────────────────────────────
 WORKDIR /app
 
-# Dependency manifests (needed for `pip install --no-deps -e .`)
+# Dependency manifests
 COPY pyproject.toml uv.lock ./
 
 # Source code — this is where flows, agents, models, and config live
@@ -99,7 +99,7 @@ COPY alembic.ini ./
 
 # Install the project package into the venv (no dependency resolution,
 # only registers the package so `import src` and entry points work)
-RUN /app/.venv/bin/pip install --no-deps -e .
+RUN VIRTUAL_ENV=/app/.venv uv pip install --no-deps -e .
 
 # ── Build arg: application commit SHA ─────────────────────────────────────
 # Injected by CI via: --build-arg APP_COMMIT_SHA=$(git rev-parse HEAD)

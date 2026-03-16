@@ -21,6 +21,7 @@ spec:
       containers:
         - name: worker
           image: autodoc-worker:latest
+          imagePullPolicy: IfNotPresent
           command: ["prefect", "worker", "start", "--pool", "k8s-pool"]
           env:
             - name: PREFECT_API_URL

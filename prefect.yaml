@@ -1,116 +1,102 @@
 # Prefect deployment configuration for AutoDoc ADK
 # See: https://docs.prefect.io/latest/deploy/infrastructure-concepts/work-pools/
-
-# Deployments use AUTODOC_FLOW_DEPLOYMENT_PREFIX env var to select dev/prod target
-# Dev deployments use local-dev work pool (process-based)
-# Prod deployments use orchestrator-pool (kubernetes) or k8s-pool (kubernetes)
+#
+# K8s deployments (dev-k8s, prod) bake flow code into the Flow Runner image
+# (Dockerfile.flow). No remote code storage is needed — the worker tells
+# Prefect to set_working_directory to /app inside the container.
+#
+# Dev deployments use local-dev work pool (process-based, runs in-process).
 
 name: autodoc-adk
 
+# Flow code is baked into the Docker image at /app — no remote pull needed.
+# The pull step just sets the working directory so Prefect finds the entrypoint.
+pull:
+  - prefect.deployments.steps.set_working_directory:
+      directory: /app
+
+definitions:
+  # Reusable work pool configs with image reference
+  work_pools:
+    orchestrator: &orchestrator_pool
+      name: orchestrator-pool
+      job_variables:
+        image: "{{ $AUTODOC_FLOW_IMAGE | default('autodoc-flow:latest') }}"
+    k8s: &k8s_pool
+      name: k8s-pool
+      job_variables:
+        image: "{{ $AUTODOC_FLOW_IMAGE | default('autodoc-flow:latest') }}"
+    local: &local_pool
+      name: local-dev
+
 deployments:
-  # Full generation flow - dev
+  # ---- Dev (Docker Compose, in-process) ------------------------------------
+
   - name: dev-full-generation
     entrypoint: src/flows/full_generation.py:full_generation_flow
-    work_pool:
-      name: local-dev
-    tags:
-      - autodoc
-      - full-generation
-      - dev
+    work_pool: *local_pool
+    pull: []
+    tags: [autodoc, full-generation, dev]
 
-  # Full generation flow - prod (orchestrator pool)
-  - name: prod-full-generation
-    entrypoint: src/flows/full_generation.py:full_generation_flow
-    work_pool:
-      name: orchestrator-pool
-    tags:
-      - autodoc
-      - full-generation
-      - prod
-
-  # Scope processing flow - dev
   - name: dev-scope-processing
     entrypoint: src/flows/scope_processing.py:scope_processing_flow
-    work_pool:
-      name: local-dev
-    tags:
-      - autodoc
-      - scope-processing
-      - dev
+    work_pool: *local_pool
+    pull: []
+    tags: [autodoc, scope-processing, dev]
 
-  # Scope processing flow - prod (k8s pool for worker pods)
-  - name: prod-scope-processing
-    entrypoint: src/flows/scope_processing.py:scope_processing_flow
-    work_pool:
-      name: k8s-pool
-    tags:
-      - autodoc
-      - scope-processing
-      - prod
-
-  # Incremental update flow - dev
   - name: dev-incremental
     entrypoint: src/flows/incremental_update.py:incremental_update_flow
-    work_pool:
-      name: local-dev
-    tags:
-      - autodoc
-      - incremental
-      - dev
+    work_pool: *local_pool
+    pull: []
+    tags: [autodoc, incremental, dev]
 
-  # Incremental update flow - prod (orchestrator pool)
-  - name: prod-incremental
-    entrypoint: src/flows/incremental_update.py:incremental_update_flow
-    work_pool:
-      name: orchestrator-pool
-    tags:
-      - autodoc
-      - incremental
-      - prod
-
-  # --- dev-k8s deployments (hybrid: Docker infra + K8s application) ---
-
-  # Full generation flow - dev-k8s (orchestrator pool)
-  - name: dev-k8s-full-generation
-    entrypoint: src/flows/full_generation.py:full_generation_flow
-    work_pool:
-      name: orchestrator-pool
-    tags:
-      - autodoc
-      - full-generation
-      - dev-k8s
-
-  # Scope processing flow - dev-k8s (k8s pool)
-  - name: dev-k8s-scope-processing
-    entrypoint: src/flows/scope_processing.py:scope_processing_flow
-    work_pool:
-      name: k8s-pool
-    tags:
-      - autodoc
-      - scope-processing
-      - dev-k8s
-
-  # Incremental update flow - dev-k8s (orchestrator pool)
-  - name: dev-k8s-incremental
-    entrypoint: src/flows/incremental_update.py:incremental_update_flow
-    work_pool:
-      name: orchestrator-pool
-    tags:
-      - autodoc
-      - incremental
-      - dev-k8s
-
-  # --- Cleanup (dev Docker Compose only — K8s uses emptyDir) ---
-
-  # Orphan workspace cleanup flow - dev only
   - name: dev-cleanup
     entrypoint: src/flows/tasks/cleanup.py:cleanup_orphan_workspaces
-    work_pool:
-      name: local-dev
+    work_pool: *local_pool
+    pull: []
     schedules:
       - cron: "*/15 * * * *"
         timezone: "UTC"
-    tags:
-      - autodoc
-      - cleanup
-      - dev
+    tags: [autodoc, cleanup, dev]
+
+  # ---- Dev-K8s (hybrid: Docker infra + K8s app) ---------------------------
+  # Code baked into autodoc-flow image. build: [] skips Prefect image build.
+
+  - name: dev-k8s-full-generation
+    entrypoint: src/flows/full_generation.py:full_generation_flow
+    work_pool: *orchestrator_pool
+    build: []
+    tags: [autodoc, full-generation, dev-k8s]
+
+  - name: dev-k8s-scope-processing
+    entrypoint: src/flows/scope_processing.py:scope_processing_flow
+    work_pool: *k8s_pool
+    build: []
+    tags: [autodoc, scope-processing, dev-k8s]
+
+  - name: dev-k8s-incremental
+    entrypoint: src/flows/incremental_update.py:incremental_update_flow
+    work_pool: *orchestrator_pool
+    build: []
+    tags: [autodoc, incremental, dev-k8s]
+
+  # ---- Prod (full K8s) ----------------------------------------------------
+  # Same baked-image pattern. Set AUTODOC_FLOW_IMAGE to your registry/tag.
+
+  - name: prod-full-generation
+    entrypoint: src/flows/full_generation.py:full_generation_flow
+    work_pool: *orchestrator_pool
+    build: []
+    tags: [autodoc, full-generation, prod]
+
+  - name: prod-scope-processing
+    entrypoint: src/flows/scope_processing.py:scope_processing_flow
+    work_pool: *k8s_pool
+    build: []
+    tags: [autodoc, scope-processing, prod]
+
+  - name: prod-incremental
+    entrypoint: src/flows/incremental_update.py:incremental_update_flow
+    work_pool: *orchestrator_pool
+    build: []
+    tags: [autodoc, incremental, prod]

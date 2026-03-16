@@ -17,3 +17,4 @@ patches:
   - path: patches/config.yaml
   - path: patches/secrets.yaml
   - path: patches/resource-quota.yaml
+  - path: patches/prefect-api.yaml

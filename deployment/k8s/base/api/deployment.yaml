@@ -20,6 +20,7 @@ spec:
       containers:
         - name: api
           image: autodoc-api:latest
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
               protocol: TCP
