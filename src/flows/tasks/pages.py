@@ -7,6 +7,7 @@ import uuid
 from prefect import flow, task
 from prefect.futures import wait
 from prefect.task_runners import ThreadPoolTaskRunner
+from prefect.tasks import exponential_backoff
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -21,10 +22,22 @@ from src.agents.structure_extractor.schemas import PageSpec, SectionSpec
 from src.config.settings import get_settings
 from src.database.models.wiki_page import WikiPage
 from src.database.repos.wiki_repo import WikiRepo
+from src.errors import PermanentError, QualityError
 from src.flows.schemas import PageTaskResult, StructureTaskResult, TokenUsageResult
 from src.services.config_loader import AutodocConfig
 
 logger = logging.getLogger(__name__)
+
+
+def _should_retry_page(task, task_run, state) -> bool:
+    """Retry on transient errors; skip retry for permanent/quality failures."""
+    try:
+        state.result()
+    except (PermanentError, QualityError):
+        return False
+    except Exception:
+        return True
+    return False
 
 
 def _collect_page_specs(sections: list[SectionSpec]) -> list[PageSpec]:
@@ -61,6 +74,9 @@ def _reconstruct_page_specs(sections_json: list[dict]) -> list[PageSpec]:
     name="generate_single_page",
     task_run_name="page-{page_spec.page_key}",
     timeout_seconds=600,
+    retries=3,
+    retry_delay_seconds=exponential_backoff(backoff_factor=5),
+    retry_condition_fn=_should_retry_page,
 )
 async def generate_single_page(
     *,
@@ -79,9 +95,9 @@ async def generate_single_page(
     settings = get_settings()
     db_url = settings.DATABASE_URL
 
-    from google.adk.sessions import DatabaseSessionService
+    from src.services.session import SanitizedDatabaseSessionService
 
-    session_service = DatabaseSessionService(db_url=db_url)
+    session_service = SanitizedDatabaseSessionService(db_url=db_url)
 
     session_id = f"page-{job_id}-{page_spec.page_key}-{uuid.uuid4().hex[:8]}"
 

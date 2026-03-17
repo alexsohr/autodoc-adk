@@ -64,9 +64,9 @@ async def delete_sessions(
     settings = get_settings()
     db_url = settings.DATABASE_URL
 
-    from google.adk.sessions import DatabaseSessionService
+    from src.services.session import SanitizedDatabaseSessionService
 
-    session_service = DatabaseSessionService(db_url=db_url)
+    session_service = SanitizedDatabaseSessionService(db_url=db_url)
 
     for sid in session_ids:
         try:

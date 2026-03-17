@@ -52,9 +52,9 @@ async def extract_structure(
     # Create ADK DatabaseSessionService
     db_url = settings.DATABASE_URL
 
-    from google.adk.sessions import DatabaseSessionService
+    from src.services.session import SanitizedDatabaseSessionService
 
-    session_service = DatabaseSessionService(db_url=db_url)
+    session_service = SanitizedDatabaseSessionService(db_url=db_url)
 
     session_id = f"structure-{job_id}-{scope_path}-{uuid.uuid4().hex[:8]}"
 

@@ -140,7 +140,7 @@ async def full_generation_flow(
                     configs[i].scope_path,
                     type(result).__name__,
                     result,
-                    exc_info=result,
+                    exc_info=(type(result), result, result.__traceback__),
                 )
                 continue
 
