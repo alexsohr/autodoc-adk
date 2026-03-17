@@ -81,7 +81,7 @@ def _patch_settings():
 
 def _patch_session_service():
     return patch(
-        "google.adk.sessions.DatabaseSessionService",
+        "src.services.session.SanitizedDatabaseSessionService",
         return_value=MagicMock(),
     )
 
