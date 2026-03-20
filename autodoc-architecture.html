@@ -102,6 +102,13 @@ svg text{user-select:none}
 .drawer-code .cm{color:#8b949e;font-style:italic}
 .drawer-code .tp{color:#79c0ff}
 .drawer-code .dec{color:#ffa657}
+.seq-phase-label{font-size:10px;text-transform:uppercase;letter-spacing:.8px;font-weight:600}
+.seq-step-rect{cursor:pointer;transition:filter .15s}
+.seq-step-rect:hover{filter:brightness(1.3)}
+.seq-step-num{font-size:10px;font-weight:700;fill:#8b949e}
+.seq-step-label{font-size:11px;fill:#f0f6fc}
+.seq-step-duration{font-size:10px;fill:#8b949e;font-family:'SF Mono',Consolas,monospace}
+.seq-connector{stroke:#30363d;stroke-width:1.5}
 </style>
 </head>
 <body>
@@ -523,6 +530,41 @@ const PRESETS = {
 };
 
 // ════════════════════════════════════════════════════════════════
+// SEQUENCE DATA
+// ════════════════════════════════════════════════════════════════
+const SEQUENCE_STEPS = [
+  { step:1, node:'webhooks-api', label:'Receive push event', duration:'~10ms', phase:'trigger' },
+  { step:2, node:'jobs-api', label:'Create job (PENDING→RUNNING)', duration:'~100ms', phase:'trigger' },
+  { step:3, node:'full-generation', label:'Start flow run', duration:'~2s', phase:'orchestration' },
+  { step:4, node:'git-providers', label:'Clone repository', duration:'~10s', phase:'orchestration' },
+  { step:5, node:'config-loader', label:'Discover .autodoc.yaml scopes', duration:'~500ms', phase:'orchestration' },
+  { step:6, node:'work-pools', label:'Fan out K8s jobs per scope', duration:'~5s', phase:'orchestration' },
+  { step:7, node:'scope-processing', label:'Start scope processing', duration:'—', phase:'processing' },
+  { step:8, node:'structure-extractor', label:'Extract wiki structure (Generator+Critic)', duration:'~30-60s', phase:'processing' },
+  { step:9, node:'llm-providers', label:'LLM inference (structure)', duration:'within above', phase:'processing' },
+  { step:10, node:'page-generator', label:'Generate pages (parallel, 3 concurrent)', duration:'~2-5min', phase:'processing' },
+  { step:11, node:'llm-providers', label:'LLM inference (per page × attempts)', duration:'within above', phase:'processing' },
+  { step:12, node:'wiki-tables', label:'Save structure + pages to DB', duration:'~500ms', phase:'processing' },
+  { step:13, node:'chunking', label:'Chunk pages (heading-aware)', duration:'~2s', phase:'embedding' },
+  { step:14, node:'embedding', label:'Generate embeddings (batched)', duration:'~10-30s', phase:'embedding' },
+  { step:15, node:'pgvector-chunks', label:'Save chunks + vectors to pgvector', duration:'~1s', phase:'embedding' },
+  { step:16, node:'readme-distiller', label:'Distill README (Generator+Critic)', duration:'~20-40s', phase:'readme' },
+  { step:17, node:'llm-providers', label:'LLM inference (README)', duration:'within above', phase:'readme' },
+  { step:18, node:'git-providers', label:'Create PR with docs + README', duration:'~5s', phase:'finalize' },
+  { step:19, node:'session-mgr', label:'Archive sessions to S3', duration:'~2s', phase:'finalize' },
+  { step:20, node:'jobs-api', label:'Job complete (RUNNING→COMPLETED)', duration:'~100ms', phase:'finalize' }
+];
+
+const PHASES = {
+  trigger: { label: 'Trigger', color: '#f59e0b' },
+  orchestration: { label: 'Orchestration', color: '#22c55e' },
+  processing: { label: 'Agent Processing', color: '#a855f7' },
+  embedding: { label: 'Embedding', color: '#06b6d4' },
+  readme: { label: 'README', color: '#ec4899' },
+  finalize: { label: 'Finalize', color: '#6b7280' }
+};
+
+// ════════════════════════════════════════════════════════════════
 // STATE
 // ════════════════════════════════════════════════════════════════
 const state = {
@@ -681,14 +723,87 @@ function render() {
 
 function renderSequence() {
   svg.innerHTML = '';
-  svg.setAttribute('viewBox', '0 0 900 1100');
-  const NS = 'http://www.w3.org/2000/svg';
-  const t = document.createElementNS(NS, 'text');
-  t.setAttribute('x', '450'); t.setAttribute('y', '100');
-  t.setAttribute('fill', '#8b949e'); t.setAttribute('font-size', '14');
-  t.setAttribute('text-anchor', 'middle');
-  t.textContent = 'Sequence diagram — coming soon';
-  svg.appendChild(t);
+  const stepH = 48;
+  const barX = 120, barW = 500;
+  let y = 60;
+  let currentPhase = null;
+
+  // Compute total height
+  let totalH = 60;
+  let prevPhase = null;
+  SEQUENCE_STEPS.forEach(s => {
+    if (s.phase !== prevPhase) { totalH += 22; prevPhase = s.phase; }
+    totalH += stepH;
+  });
+  totalH += 40;
+
+  svg.setAttribute('viewBox', `0 0 900 ${totalH}`);
+
+  // Title
+  el('text', { x:'450', y:'30', fill:'#f0f6fc', 'font-size':'16', 'font-weight':'700', 'text-anchor':'middle' }, svg)
+    .textContent = 'Full Generation Job Timeline';
+
+  SEQUENCE_STEPS.forEach((s, i) => {
+    const n = nodeMap[s.node];
+    const phaseCfg = PHASES[s.phase];
+
+    // Phase divider
+    if (s.phase !== currentPhase) {
+      currentPhase = s.phase;
+      el('line', { x1:'40', y1:String(y), x2:'860', y2:String(y), stroke:phaseCfg.color, 'stroke-width':'0.5', opacity:'0.4' }, svg);
+      el('text', { x:'50', y:String(y + 14), fill:phaseCfg.color, class:'seq-phase-label' }, svg)
+        .textContent = phaseCfg.label;
+      y += 22;
+    }
+
+    // Connector
+    if (i > 0) {
+      el('line', { x1:String(barX + barW/2), y1:String(y - stepH + 32), x2:String(barX + barW/2), y2:String(y), class:'seq-connector' }, svg);
+    }
+
+    // Step bar
+    const layerCfg = n ? LAYERS[n.layer] : { fill:'#1f2937', color:'#6b7280' };
+    const g = el('g', { class:'seq-step-rect' }, svg);
+    el('rect', {
+      x:String(barX), y:String(y), width:String(barW), height:'32', rx:'6', ry:'6',
+      fill:layerCfg.fill, stroke:layerCfg.color, 'stroke-width':'1'
+    }, g);
+
+    // Step number
+    el('text', { x:String(barX - 20), y:String(y + 20), class:'seq-step-num', 'text-anchor':'end' }, svg)
+      .textContent = String(s.step);
+
+    // Label
+    el('text', { x:String(barX + 12), y:String(y + 20), class:'seq-step-label' }, g)
+      .textContent = s.label;
+
+    // Duration
+    el('text', { x:String(barX + barW - 12), y:String(y + 20), class:'seq-step-duration', 'text-anchor':'end' }, g)
+      .textContent = s.duration;
+
+    // Component name
+    if (n) {
+      el('text', { x:String(barX + barW + 15), y:String(y + 20), fill:layerCfg.color, 'font-size':'10', 'font-weight':'600' }, svg)
+        .textContent = n.label;
+    }
+
+    // Click to show details
+    if (n) {
+      g.addEventListener('click', () => {
+        showDetail(n.id);
+        switchTab('details');
+      });
+    }
+
+    y += stepH;
+  });
+
+  // Total estimate
+  el('text', { x:'450', y:String(y + 20), fill:'#8b949e', 'font-size':'12', 'text-anchor':'middle' }, svg)
+    .textContent = 'Estimated total: 3-8 minutes per scope (depends on page count and LLM latency)';
+
+  svg.style.transform = `scale(${state.zoom}) translate(${state.panX}px, ${state.panY}px)`;
+  svg.style.transformOrigin = 'top left';
 }
 
 function renderPackageMatrix() {
