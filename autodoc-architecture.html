@@ -115,6 +115,9 @@ svg text{user-select:none}
 .matrix-pkg-label{font-size:10px;fill:#c9d1d9;font-family:'SF Mono',Consolas,monospace}
 .matrix-header{font-size:9px;fill:#8b949e;font-weight:600}
 .matrix-divider{stroke:#21262d;stroke-width:0.5}
+.k8s-badge{pointer-events:none}
+.k8s-status-dot{transition:fill .3s}
+.k8s-tooltip{font-size:9px;fill:#c9d1d9;font-family:'SF Mono',Consolas,monospace}
 </style>
 </head>
 <body>
@@ -568,6 +571,29 @@ const PHASES = {
   embedding: { label: 'Embedding', color: '#06b6d4' },
   readme: { label: 'README', color: '#ec4899' },
   finalize: { label: 'Finalize', color: '#6b7280' }
+};
+
+// ════════════════════════════════════════════════════════════════
+// K8S STATUS DATA
+// ════════════════════════════════════════════════════════════════
+const K8S_STATUS_ENDPOINT = null;  // Set to URL for live data
+
+const K8S_MOCK_STATUS = {
+  'api-image':      { status:'healthy', replicas:'3/3', cpu:'120m', memory:'256Mi' },
+  'worker-image':   { status:'healthy', replicas:'2/2', cpu:'80m',  memory:'128Mi' },
+  'flow-runner':    { status:'healthy', replicas:'—',   cpu:'—',    memory:'—', note:'On-demand K8s jobs' },
+  'k8s-cluster':    { status:'healthy', replicas:'—',   cpu:'2.1/4', memory:'6.2/8Gi' },
+  'work-pools':     { status:'healthy', replicas:'—',   cpu:'—',    memory:'—', note:'orch: 3/10, k8s: 12/50' },
+  'postgres-autodoc':{ status:'healthy', replicas:'1/1', cpu:'250m', memory:'512Mi' },
+  'prefect-db':     { status:'healthy', replicas:'1/1', cpu:'100m', memory:'256Mi' },
+  'redis':          { status:'healthy', replicas:'1/1', cpu:'50m',  memory:'64Mi' }
+};
+
+const STATUS_COLORS = {
+  healthy: '#22c55e',
+  degraded: '#f59e0b',
+  unhealthy: '#ef4444',
+  unknown: '#6b7280'
 };
 
 // ════════════════════════════════════════════════════════════════
@@ -1083,6 +1109,36 @@ function renderSpatial() {
     });
   });
 
+  // K8s status badges
+  if (state.overlays.k8s) {
+    nodes.forEach(n => {
+      if (!isNodeVisible(n) || state.collapsedLayers[n.layer]) return;
+      const status = state.k8sStatus[n.id];
+      if (!status) return;
+
+      const badgeG = el('g', { class: 'k8s-badge' }, svg);
+      // Status dot at bottom-right of node
+      el('circle', {
+        cx: String(n.x + n.w - 18), cy: String(n.y + n.h - 14), r: '5',
+        fill: STATUS_COLORS[status.status] || STATUS_COLORS.unknown,
+        class: 'k8s-status-dot'
+      }, badgeG);
+
+      // Metrics text below node
+      if (status.replicas && status.replicas !== '\u2014') {
+        el('text', {
+          x: String(n.x + n.w/2), y: String(n.y + n.h + 12),
+          'text-anchor': 'middle', class: 'k8s-tooltip'
+        }, badgeG).textContent = `${status.replicas} | ${status.cpu} CPU | ${status.memory}`;
+      } else if (status.note) {
+        el('text', {
+          x: String(n.x + n.w/2), y: String(n.y + n.h + 12),
+          'text-anchor': 'middle', class: 'k8s-tooltip'
+        }, badgeG).textContent = status.note;
+      }
+    });
+  }
+
   // Path hint overlay
   let hintEl = document.getElementById('path-hint');
   if (state.overlays.pathfinder && state.pathStart && !state.pathEnd) {
@@ -1105,6 +1161,24 @@ function renderSpatial() {
   svg.style.transformOrigin = 'top left';
 
   updatePrompt();
+}
+
+// ════════════════════════════════════════════════════════════════
+// K8S STATUS REFRESH
+// ════════════════════════════════════════════════════════════════
+async function refreshK8sStatus() {
+  if (K8S_STATUS_ENDPOINT) {
+    try {
+      const resp = await fetch(K8S_STATUS_ENDPOINT);
+      state.k8sStatus = await resp.json();
+    } catch (e) {
+      console.warn('K8s status fetch failed, using mock:', e.message);
+      state.k8sStatus = { ...K8S_MOCK_STATUS };
+    }
+  } else {
+    state.k8sStatus = { ...K8S_MOCK_STATUS };
+  }
+  render();
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1154,6 +1228,18 @@ function showDetail(id) {
     ${n.envs.length ? `<div class="dp-section">Environment Variables</div><div>${n.envs.map(e => `<div class="dp-env">${e}</div>`).join('')}</div>` : ''}
     <div class="dp-section">Layer</div>
     <div><span class="dp-tag" style="border-color:${LAYERS[n.layer].color};color:${LAYERS[n.layer].color}">${LAYERS[n.layer].label}</span></div>
+    ${(state.overlays.k8s && state.k8sStatus[id]) ? (() => {
+      const k = state.k8sStatus[id];
+      return `<div class="dp-section">K8s Status</div>
+      <div style="display:flex;align-items:center;gap:6px;margin:4px 0">
+        <div style="width:8px;height:8px;border-radius:50%;background:${STATUS_COLORS[k.status]}"></div>
+        <span style="font-size:12px;color:${STATUS_COLORS[k.status]};font-weight:600">${k.status.toUpperCase()}</span>
+      </div>
+      ${k.replicas ? `<div class="dp-env">Replicas: ${k.replicas}</div>` : ''}
+      ${k.cpu ? `<div class="dp-env">CPU: ${k.cpu}</div>` : ''}
+      ${k.memory ? `<div class="dp-env">Memory: ${k.memory}</div>` : ''}
+      ${k.note ? `<div style="font-size:11px;color:#8b949e;margin-top:4px">${k.note}</div>` : ''}`;
+    })() : ''}
     ${n.codeSnippet ? `<button class="dp-tag" style="cursor:pointer;margin-top:8px;border-color:#a855f7;color:#a855f7" onclick="openDrawer('${id}')">View Code</button>` : ''}
     <div class="comment-form">
       <textarea id="comment-input" placeholder="Add a note about this component..."></textarea>
@@ -1452,6 +1538,11 @@ function buildToolbar() {
       if (!state.overlays[key]) {
         if (key === 'impact') state.impactSource = null;
         if (key === 'pathfinder') { state.pathStart = null; state.pathEnd = null; }
+      }
+      if (key === 'k8s' && state.overlays[key]) {
+        render();
+        refreshK8sStatus();
+        return;
       }
       render();
     });
