@@ -78,6 +78,14 @@ svg text{user-select:none}
 .toolbar-btn.active{color:#fff;background:#1f6feb;border-color:#1f6feb}
 .toolbar-toggle.active{color:#f0f6fc;background:#238636;border-color:#238636}
 .toolbar-toggle.active:hover{background:#2ea043}
+.node-group.impact-source rect{stroke:#f97316!important;stroke-width:3!important;filter:drop-shadow(0 0 8px rgba(249,115,22,.6))}
+.node-group.impact-affected rect{stroke:#ef4444!important;stroke-width:2.5!important;filter:drop-shadow(0 0 6px rgba(239,68,68,.4))}
+.node-group.impact-safe{opacity:.25}
+.node-group.path-node rect{stroke:#8b5cf6!important;stroke-width:2.5!important;filter:drop-shadow(0 0 6px rgba(139,92,246,.5))}
+.node-group.path-endpoint rect{stroke:#8b5cf6!important;stroke-width:3!important;filter:drop-shadow(0 0 10px rgba(139,92,246,.7))}
+.node-group.path-dimmed{opacity:.15}
+.connection-path.path-highlight{stroke:#8b5cf6!important;stroke-width:3.5!important;opacity:1!important;stroke-dasharray:none!important}
+.path-hint{position:absolute;bottom:50px;left:50%;transform:translateX(-50%);background:rgba(139,92,246,.9);color:#fff;padding:6px 14px;border-radius:6px;font-size:12px;pointer-events:none;z-index:10}
 </style>
 </head>
 <body>
@@ -657,6 +665,26 @@ function renderSpatial() {
     el('text', { x:'8', y:String(minY+12), fill:cfg.color, 'font-size':'10', opacity:'0.5', 'font-weight':'600', 'text-transform':'uppercase', 'letter-spacing':'1' }, svg).textContent = cfg.label.toUpperCase();
   });
 
+  // Compute impact set
+  const impactAffected = (state.overlays.impact && state.impactSource)
+    ? getDownstream(state.impactSource, new Set(['data-flow', 'tool-call', 'async-event']))
+    : null;
+
+  // Compute path
+  let pathSet = null;
+  let pathEdges = null;
+  if (state.overlays.pathfinder && state.pathStart && state.pathEnd) {
+    const pathNodes = findPath(state.pathStart, state.pathEnd);
+    if (pathNodes) {
+      pathSet = new Set(pathNodes);
+      pathEdges = new Set();
+      for (let i = 0; i < pathNodes.length - 1; i++) {
+        pathEdges.add(`${pathNodes[i]}→${pathNodes[i+1]}`);
+        pathEdges.add(`${pathNodes[i+1]}→${pathNodes[i]}`);
+      }
+    }
+  }
+
   // Connections
   const connGroup = el('g', { class:'connections' }, svg);
   connections.forEach(c => {
@@ -676,6 +704,9 @@ function renderSpatial() {
     const cls = ['connection-path'];
     if (state.hoveredNode && c.from !== state.hoveredNode && c.to !== state.hoveredNode) cls.push('dimmed');
     if (state.hoveredNode && (c.from === state.hoveredNode || c.to === state.hoveredNode)) cls.push('highlighted');
+    if (pathEdges && (pathEdges.has(`${c.from}→${c.to}`) || pathEdges.has(`${c.to}→${c.from}`))) {
+      cls.push('path-highlight');
+    }
     const attrs = { d, stroke:cfg.color, class:cls.join(' '), 'marker-end':'url(#arrow-'+c.type+')' };
     if (cfg.dash) attrs['stroke-dasharray'] = cfg.dash;
     const path = el('path', attrs, connGroup);
@@ -710,11 +741,44 @@ function renderSpatial() {
       el('text', { x:n.x+n.w-6, y:n.y+10, fill:'#fff', 'font-size':'9', 'text-anchor':'middle', 'font-weight':'700' }, g).textContent = cc;
     }
 
+    // Impact analysis classes
+    if (impactAffected) {
+      if (n.id === state.impactSource) {
+        g.classList.add('impact-source');
+      } else if (impactAffected.has(n.id)) {
+        g.classList.add('impact-affected');
+      } else {
+        g.classList.add('impact-safe');
+      }
+    }
+
+    // Path finder classes
+    if (pathSet) {
+      if (n.id === state.pathStart || n.id === state.pathEnd) g.classList.add('path-endpoint');
+      else if (pathSet.has(n.id)) g.classList.add('path-node');
+      else g.classList.add('path-dimmed');
+    }
+
     // Events
     g.addEventListener('click', () => selectNode(n.id));
     g.addEventListener('mouseenter', () => { state.hoveredNode = n.id; render(); });
     g.addEventListener('mouseleave', () => { state.hoveredNode = null; render(); });
   });
+
+  // Path hint overlay
+  let hintEl = document.getElementById('path-hint');
+  if (state.overlays.pathfinder && state.pathStart && !state.pathEnd) {
+    if (!hintEl) {
+      hintEl = document.createElement('div');
+      hintEl.id = 'path-hint';
+      hintEl.className = 'path-hint';
+      document.getElementById('canvas-wrap').appendChild(hintEl);
+    }
+    hintEl.textContent = `Start: ${nodeMap[state.pathStart].label} — click destination`;
+    hintEl.style.display = 'block';
+  } else if (hintEl) {
+    hintEl.style.display = 'none';
+  }
 
   // Transform
   const wrap = document.getElementById('canvas-wrap');
@@ -729,6 +793,30 @@ function renderSpatial() {
 // INTERACTION
 // ════════════════════════════════════════════════════════════════
 function selectNode(id) {
+  if (state.overlays.impact && state.canvasMode === 'spatial') {
+    state.impactSource = (state.impactSource === id) ? null : id;
+    render();
+    if (state.impactSource) showImpactDetail(id);
+    else showDetail(id);
+    switchTab('details');
+    return;
+  }
+  if (state.overlays.pathfinder && state.canvasMode === 'spatial') {
+    if (!state.pathStart) {
+      state.pathStart = id;
+    } else if (!state.pathEnd) {
+      if (id === state.pathStart) { state.pathStart = null; }
+      else { state.pathEnd = id; }
+    } else {
+      state.pathStart = id;
+      state.pathEnd = null;
+    }
+    render();
+    if (state.pathStart && state.pathEnd) showPathDetail(state.pathStart, state.pathEnd);
+    else if (state.pathStart) showPathHint();
+    switchTab('details');
+    return;
+  }
   state.selectedNode = id;
   render();
   showDetail(id);
@@ -752,6 +840,62 @@ function showDetail(id) {
       <textarea id="comment-input" placeholder="Add a note about this component..."></textarea>
       <button onclick="addComment('${id}')">Add Note</button>
     </div>
+  `;
+}
+
+function showImpactDetail(sourceId) {
+  const n = nodeMap[sourceId];
+  const affected = getDownstream(sourceId, new Set(['data-flow', 'tool-call', 'async-event']));
+  const affectedNodes = [...affected].map(id => nodeMap[id]).filter(Boolean);
+  const byLayer = {};
+  affectedNodes.forEach(an => {
+    const layer = LAYERS[an.layer].label;
+    if (!byLayer[layer]) byLayer[layer] = [];
+    byLayer[layer].push(an.label);
+  });
+  const panel = document.getElementById('detail-content');
+  panel.innerHTML = `
+    <div class="dp-title">Impact: ${n.label}</div>
+    <div class="dp-path">${n.path}</div>
+    <div class="dp-desc">If <strong>${n.label}</strong> fails, <strong>${affected.size}</strong> downstream component${affected.size !== 1 ? 's' : ''} are affected.</div>
+    <div class="dp-section">Blast Radius by Layer</div>
+    ${Object.entries(byLayer).map(([layer, names]) =>
+      `<div style="margin:4px 0"><span style="color:#ef4444;font-weight:600;font-size:11px">${layer}</span><br>${names.map(name => `<span class="dp-tag" style="border-color:#ef4444;color:#fca5a5">${name}</span>`).join('')}</div>`
+    ).join('')}
+    ${affected.size === 0 ? '<div style="color:#8b949e;font-size:12px;margin-top:8px">This is a leaf node — no downstream dependencies.</div>' : ''}
+  `;
+}
+
+function showPathDetail(startId, endId) {
+  const path = findPath(startId, endId);
+  const panel = document.getElementById('detail-content');
+  if (!path) {
+    panel.innerHTML = `
+      <div class="dp-title">No Path Found</div>
+      <div class="dp-desc">No connection path between <strong>${nodeMap[startId].label}</strong> and <strong>${nodeMap[endId].label}</strong>.</div>
+    `;
+    return;
+  }
+  panel.innerHTML = `
+    <div class="dp-title">Path: ${path.length - 1} hop${path.length > 2 ? 's' : ''}</div>
+    <div class="dp-desc">${nodeMap[startId].label} → ${nodeMap[endId].label}</div>
+    <div class="dp-section">Route</div>
+    <div style="margin-top:6px">
+      ${path.map((id, i) => {
+        const n = nodeMap[id];
+        const arrow = i < path.length - 1 ? '<div style="color:#8b5cf6;padding:2px 0 2px 12px">↓</div>' : '';
+        return `<div style="display:flex;align-items:center;gap:6px"><span class="dp-tag" style="border-color:${LAYERS[n.layer].color};color:${LAYERS[n.layer].color}">${n.label}</span><span style="font-size:10px;color:#8b949e">${n.path}</span></div>${arrow}`;
+      }).join('')}
+    </div>
+  `;
+}
+
+function showPathHint() {
+  const panel = document.getElementById('detail-content');
+  const start = nodeMap[state.pathStart];
+  panel.innerHTML = `
+    <div class="dp-title">Path Finder</div>
+    <div class="dp-desc">Start: <strong>${start.label}</strong><br>Click a second component to find the path.</div>
   `;
 }
 
@@ -809,6 +953,20 @@ function updatePrompt() {
 
   if (state.comments.length) {
     parts.push('\nPlease address the notes above, considering the data flow between the highlighted components.');
+  }
+
+  if (state.overlays.impact && state.impactSource) {
+    const src = nodeMap[state.impactSource];
+    const affected = getDownstream(state.impactSource, new Set(['data-flow', 'tool-call', 'async-event']));
+    parts.push(`\nImpact analysis for ${src.label} (${src.path}):`);
+    parts.push(`${affected.size} downstream components affected: ${[...affected].map(id => nodeMap[id]?.label).filter(Boolean).join(', ')}.`);
+  }
+
+  if (state.overlays.pathfinder && state.pathStart && state.pathEnd) {
+    const path = findPath(state.pathStart, state.pathEnd);
+    if (path) {
+      parts.push(`\nData path (${path.length - 1} hops): ${path.map(id => nodeMap[id]?.label).join(' → ')}`);
+    }
   }
 
   out.textContent = parts.join('\n');
