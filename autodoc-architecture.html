@@ -109,6 +109,12 @@ svg text{user-select:none}
 .seq-step-label{font-size:11px;fill:#f0f6fc}
 .seq-step-duration{font-size:10px;fill:#8b949e;font-family:'SF Mono',Consolas,monospace}
 .seq-connector{stroke:#30363d;stroke-width:1.5}
+.matrix-cell{cursor:pointer;transition:opacity .15s}
+.matrix-cell:hover{opacity:.8!important}
+.matrix-label{font-size:10px;fill:#c9d1d9}
+.matrix-pkg-label{font-size:10px;fill:#c9d1d9;font-family:'SF Mono',Consolas,monospace}
+.matrix-header{font-size:9px;fill:#8b949e;font-weight:600}
+.matrix-divider{stroke:#21262d;stroke-width:0.5}
 </style>
 </head>
 <body>
@@ -808,14 +814,91 @@ function renderSequence() {
 
 function renderPackageMatrix() {
   svg.innerHTML = '';
-  svg.setAttribute('viewBox', '0 0 900 800');
-  const NS = 'http://www.w3.org/2000/svg';
-  const t = document.createElementNS(NS, 'text');
-  t.setAttribute('x', '450'); t.setAttribute('y', '100');
-  t.setAttribute('fill', '#8b949e'); t.setAttribute('font-size', '14');
-  t.setAttribute('text-anchor', 'middle');
-  t.textContent = 'Package matrix — coming soon';
-  svg.appendChild(t);
+
+  const componentsWithPkgs = nodes.filter(n => n.packages && n.packages.length > 0);
+  const allPkgs = [...new Set(componentsWithPkgs.flatMap(n => n.packages))].sort();
+
+  const cellSize = 24;
+  const labelPadW = 220;
+  const labelPadH = 140;
+  const gridW = componentsWithPkgs.length * cellSize;
+  const gridH = allPkgs.length * cellSize;
+
+  svg.setAttribute('viewBox', `0 0 ${labelPadW + gridW + 40} ${labelPadH + gridH + 60}`);
+
+  // Title
+  el('text', { x:String((labelPadW + gridW) / 2), y:'20', fill:'#f0f6fc', 'font-size':'14', 'font-weight':'700', 'text-anchor':'middle' }, svg)
+    .textContent = 'Package Dependency Matrix';
+
+  // Column headers (rotated component names)
+  componentsWithPkgs.forEach((n, ci) => {
+    const x = labelPadW + ci * cellSize + cellSize / 2;
+    const t = el('text', {
+      x: String(x), y: String(labelPadH - 8),
+      class: 'matrix-header',
+      transform: `rotate(-55, ${x}, ${labelPadH - 8})`
+    }, svg);
+    t.textContent = n.label;
+  });
+
+  // Rows and cells
+  allPkgs.forEach((pkg, ri) => {
+    const y = labelPadH + ri * cellSize;
+
+    // Package name
+    el('text', {
+      x: String(labelPadW - 8), y: String(y + cellSize / 2 + 3),
+      class: 'matrix-pkg-label', 'text-anchor': 'end'
+    }, svg).textContent = pkg;
+
+    // Row divider
+    el('line', { x1: String(labelPadW), y1: String(y), x2: String(labelPadW + gridW), y2: String(y), class: 'matrix-divider' }, svg);
+
+    // Cells
+    componentsWithPkgs.forEach((n, ci) => {
+      const x = labelPadW + ci * cellSize;
+      const used = n.packages.includes(pkg);
+      const layerCfg = LAYERS[n.layer];
+
+      const rect = el('rect', {
+        x: String(x + 1), y: String(y + 1),
+        width: String(cellSize - 2), height: String(cellSize - 2),
+        rx: '3', ry: '3',
+        fill: used ? layerCfg.color : '#161b22',
+        opacity: used ? '0.85' : '0.3',
+        class: 'matrix-cell'
+      }, svg);
+
+      const title = el('title', {}, rect);
+      title.textContent = used ? `${n.label} uses ${pkg}` : `${n.label} does not use ${pkg}`;
+
+      rect.addEventListener('click', () => {
+        showDetail(n.id);
+        switchTab('details');
+      });
+    });
+  });
+
+  // Column dividers
+  componentsWithPkgs.forEach((_, ci) => {
+    const x = labelPadW + ci * cellSize;
+    el('line', { x1: String(x), y1: String(labelPadH), x2: String(x), y2: String(labelPadH + gridH), class: 'matrix-divider' }, svg);
+  });
+
+  // Legend
+  const legendY = labelPadH + gridH + 20;
+  el('text', { x: String(labelPadW), y: String(legendY), fill: '#8b949e', 'font-size': '10' }, svg)
+    .textContent = 'Cell color = component layer. Click a cell to see component details.';
+
+  let lx = labelPadW;
+  Object.entries(LAYERS).forEach(([, cfg]) => {
+    el('rect', { x: String(lx), y: String(legendY + 6), width: '10', height: '10', rx: '2', fill: cfg.color, opacity: '0.85' }, svg);
+    el('text', { x: String(lx + 14), y: String(legendY + 15), fill: '#8b949e', 'font-size': '9' }, svg).textContent = cfg.label;
+    lx += cfg.label.length * 6 + 24;
+  });
+
+  svg.style.transform = `scale(${state.zoom}) translate(${state.panX}px, ${state.panY}px)`;
+  svg.style.transformOrigin = 'top left';
 }
 
 function renderSpatial() {
