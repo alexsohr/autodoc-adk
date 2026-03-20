@@ -86,6 +86,9 @@ svg text{user-select:none}
 .node-group.path-dimmed{opacity:.15}
 .connection-path.path-highlight{stroke:#8b5cf6!important;stroke-width:3.5!important;opacity:1!important;stroke-dasharray:none!important}
 .path-hint{position:absolute;bottom:50px;left:50%;transform:translateX(-50%);background:rgba(139,92,246,.9);color:#fff;padding:6px 14px;border-radius:6px;font-size:12px;pointer-events:none;z-index:10}
+.layer-item .collapse-btn{margin-left:auto;background:none;border:none;color:#8b949e;cursor:pointer;font-size:11px;padding:2px 6px;border-radius:4px}
+.layer-item .collapse-btn:hover{color:#58a6ff;background:#21262d}
+.collapsed-node rect{stroke-dasharray:6 3}
 </style>
 </head>
 <body>
@@ -685,11 +688,51 @@ function renderSpatial() {
     }
   }
 
+  // Compute collapsed summaries
+  const collapsedSummaries = {};
+  Object.entries(state.collapsedLayers).forEach(([layerKey, collapsed]) => {
+    if (!collapsed || !state.layers[layerKey]) return;
+    const layerNodes = nodes.filter(n => n.layer === layerKey);
+    if (!layerNodes.length) return;
+    const minX = Math.min(...layerNodes.map(n => n.x));
+    const maxX = Math.max(...layerNodes.map(n => n.x + n.w));
+    const minY = Math.min(...layerNodes.map(n => n.y));
+    const cx = (minX + maxX) / 2;
+    const summaryW = Math.min(maxX - minX, 300);
+    collapsedSummaries[layerKey] = {
+      id: `__collapsed_${layerKey}`,
+      label: LAYERS[layerKey].label,
+      subtitle: `${layerNodes.length} components`,
+      layer: layerKey,
+      x: cx - summaryW/2, y: minY, w: summaryW, h: 54,
+      nodeIds: layerNodes.map(n => n.id)
+    };
+  });
+
+  function resolveConnEndpoint(nodeId) {
+    const n = nodeMap[nodeId];
+    if (!n) return null;
+    if (state.collapsedLayers[n.layer] && collapsedSummaries[n.layer]) {
+      return collapsedSummaries[n.layer];
+    }
+    return n;
+  }
+
   // Connections
   const connGroup = el('g', { class:'connections' }, svg);
+  const drawnConnPairs = new Set();
   connections.forEach(c => {
-    if (!isConnVisible(c)) return;
-    const fn = nodeMap[c.from], tn = nodeMap[c.to];
+    if (!state.conns[c.type]) return;
+    const fn = resolveConnEndpoint(c.from);
+    const tn = resolveConnEndpoint(c.to);
+    if (!fn || !tn) return;
+    if (!state.layers[nodeMap[c.from]?.layer] || !state.layers[nodeMap[c.to]?.layer]) return;
+    if (state.search && !fn.id.startsWith('__collapsed_') && !isNodeVisible(nodeMap[c.from])) return;
+    if (state.search && !tn.id.startsWith('__collapsed_') && !isNodeVisible(nodeMap[c.to])) return;
+    if (fn.id === tn.id) return;
+    const pairKey = `${fn.id}\u2192${tn.id}\u2192${c.type}`;
+    if (drawnConnPairs.has(pairKey)) return;
+    drawnConnPairs.add(pairKey);
     const pts = getConnPoints(fn, tn);
     const isVert = Math.abs(pts.y1 - pts.y2) > Math.abs(pts.x1 - pts.x2) * 0.4;
     let d;
@@ -704,7 +747,7 @@ function renderSpatial() {
     const cls = ['connection-path'];
     if (state.hoveredNode && c.from !== state.hoveredNode && c.to !== state.hoveredNode) cls.push('dimmed');
     if (state.hoveredNode && (c.from === state.hoveredNode || c.to === state.hoveredNode)) cls.push('highlighted');
-    if (pathEdges && (pathEdges.has(`${c.from}→${c.to}`) || pathEdges.has(`${c.to}→${c.from}`))) {
+    if (pathEdges && (pathEdges.has(`${c.from}\u2192${c.to}`) || pathEdges.has(`${c.to}\u2192${c.from}`))) {
       cls.push('path-highlight');
     }
     const attrs = { d, stroke:cfg.color, class:cls.join(' '), 'marker-end':'url(#arrow-'+c.type+')' };
@@ -712,12 +755,13 @@ function renderSpatial() {
     const path = el('path', attrs, connGroup);
     // Tooltip
     const title = el('title', {}, path);
-    title.textContent = c.label || `${fn.label} → ${tn.label}`;
+    title.textContent = c.label || `${fn.label} \u2192 ${tn.label}`;
   });
 
   // Nodes
   nodes.forEach(n => {
     if (!isNodeVisible(n)) return;
+    if (state.collapsedLayers[n.layer]) return;  // skip - shown as summary
     const cfg = LAYERS[n.layer];
     const g = el('g', { class:'node-group', 'data-id':n.id }, svg);
     if (state.selectedNode === n.id) g.classList.add('highlighted');
@@ -763,6 +807,30 @@ function renderSpatial() {
     g.addEventListener('click', () => selectNode(n.id));
     g.addEventListener('mouseenter', () => { state.hoveredNode = n.id; render(); });
     g.addEventListener('mouseleave', () => { state.hoveredNode = null; render(); });
+  });
+
+  // Collapsed summary nodes
+  Object.values(collapsedSummaries).forEach(summary => {
+    const cfg = LAYERS[summary.layer];
+    const g = el('g', { class: 'node-group collapsed-node' }, svg);
+    el('rect', {
+      x: summary.x, y: summary.y, width: summary.w, height: '54', rx: '8', ry: '8',
+      fill: cfg.fill, stroke: cfg.color, 'stroke-width': '1.5', 'stroke-dasharray': '6 3'
+    }, g);
+    el('text', {
+      x: summary.x + summary.w/2, y: summary.y + 20, fill: '#f0f6fc',
+      'font-size': '12', 'font-weight': '600', 'text-anchor': 'middle'
+    }, g).textContent = summary.label;
+    el('text', {
+      x: summary.x + summary.w/2, y: summary.y + 35, fill: '#8b949e',
+      'font-size': '10', 'text-anchor': 'middle'
+    }, g).textContent = summary.subtitle;
+    g.addEventListener('click', () => {
+      state.collapsedLayers[summary.layer] = false;
+      const btn = document.querySelector(`.collapse-btn[data-layer="${summary.layer}"]`);
+      if (btn) { btn.textContent = '\u2212'; btn.title = 'Collapse layer'; }
+      render();
+    });
   });
 
   // Path hint overlay
@@ -1008,6 +1076,20 @@ function buildControls() {
       updatePresetBtns();
       render();
     });
+    const colBtn = document.createElement('button');
+    colBtn.className = 'collapse-btn';
+    colBtn.textContent = state.collapsedLayers[key] ? '+' : '\u2212';
+    colBtn.title = state.collapsedLayers[key] ? 'Expand layer' : 'Collapse layer';
+    colBtn.dataset.layer = key;
+    colBtn.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      state.collapsedLayers[key] = !state.collapsedLayers[key];
+      colBtn.textContent = state.collapsedLayers[key] ? '+' : '\u2212';
+      colBtn.title = state.collapsedLayers[key] ? 'Expand layer' : 'Collapse layer';
+      render();
+    });
+    item.appendChild(colBtn);
     layerDiv.appendChild(item);
   });
 
