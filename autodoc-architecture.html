@@ -89,6 +89,19 @@ svg text{user-select:none}
 .layer-item .collapse-btn{margin-left:auto;background:none;border:none;color:#8b949e;cursor:pointer;font-size:11px;padding:2px 6px;border-radius:4px}
 .layer-item .collapse-btn:hover{color:#58a6ff;background:#21262d}
 .collapsed-node rect{stroke-dasharray:6 3}
+.code-drawer{position:absolute;top:0;right:-420px;width:420px;height:100%;background:#0d1117;border-left:1px solid #30363d;transition:right .25s ease;z-index:20;display:flex;flex-direction:column}
+.code-drawer.open{right:0}
+.drawer-header{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid #21262d;flex-shrink:0}
+.drawer-header span{font-size:13px;font-weight:600;color:#f0f6fc}
+.drawer-close{background:none;border:none;color:#8b949e;font-size:18px;cursor:pointer;padding:0 4px}
+.drawer-close:hover{color:#f85149}
+.drawer-code{flex:1;overflow:auto;padding:14px;font-family:'SF Mono',Consolas,monospace;font-size:11.5px;line-height:1.6;color:#c9d1d9;white-space:pre;tab-size:4;margin:0}
+.drawer-code .kw{color:#ff7b72}
+.drawer-code .fn{color:#d2a8ff}
+.drawer-code .str{color:#a5d6ff}
+.drawer-code .cm{color:#8b949e;font-style:italic}
+.drawer-code .tp{color:#79c0ff}
+.drawer-code .dec{color:#ffa657}
 </style>
 </head>
 <body>
@@ -143,6 +156,13 @@ svg text{user-select:none}
         <div class="legend-item"><div class="legend-line dashed" style="border-color:#f97316"></div>Async / Event</div>
         <div class="legend-item"><div class="legend-line dotted" style="border-color:#6b7280"></div>Dependency</div>
       </div>
+      <div id="code-drawer" class="code-drawer">
+        <div class="drawer-header">
+          <span id="drawer-title">Code Preview</span>
+          <button class="drawer-close" onclick="closeDrawer()">&times;</button>
+        </div>
+        <pre id="drawer-code" class="drawer-code"></pre>
+      </div>
     </div>
     <div class="prompt-bar">
       <pre id="prompt-output">Explore the architecture — click components to add notes, toggle layers to focus.</pre>
@@ -183,25 +203,29 @@ const nodes = [
     desc:'Provider abstraction for clone, PR creation, and commit comparison APIs.',
     path:'src/providers/{github,bitbucket}.py',
     packages:['httpx','gitpython'],
-    envs:['GITHUB_TOKEN','GITLAB_TOKEN'] },
+    envs:['GITHUB_TOKEN','GITLAB_TOKEN'],
+    codeSnippet: null },
   { id:'llm-providers', label:'LLM Providers', subtitle:'Gemini / OpenAI / Azure / Bedrock', layer:'external',
     x:420, y:35, w:190, h:H,
     desc:'Multi-provider LLM access via ADK native Gemini + LiteLLM wrapper for others.',
     path:'src/config/models.py',
     packages:['google-adk','litellm'],
-    envs:['DEFAULT_MODEL','STRUCTURE_GENERATOR_MODEL','PAGE_GENERATOR_MODEL','PAGE_CRITIC_MODEL','README_GENERATOR_MODEL'] },
+    envs:['DEFAULT_MODEL','STRUCTURE_GENERATOR_MODEL','PAGE_GENERATOR_MODEL','PAGE_CRITIC_MODEL','README_GENERATOR_MODEL'],
+    codeSnippet: null },
   { id:'s3-storage', label:'AWS S3', subtitle:'Session archival', layer:'external',
     x:760, y:35, w:145, h:H,
     desc:'Object storage for archiving ADK agent sessions after each flow run.',
     path:'src/services/session.py',
     packages:['boto3'],
-    envs:['SESSION_ARCHIVE_BUCKET','AWS_REGION'] },
+    envs:['SESSION_ARCHIVE_BUCKET','AWS_REGION'],
+    codeSnippet: null },
   { id:'otel-collector', label:'OTEL Collector', subtitle:'Traces & structured logs', layer:'external',
     x:1060, y:35, w:W, h:H,
     desc:'OpenTelemetry collector receives traces and correlated structured logs (trace_id + span_id).',
     path:'src/config/telemetry.py',
     packages:['opentelemetry-sdk','opentelemetry-exporter-otlp-proto-grpc','opentelemetry-instrumentation-logging'],
-    envs:['OTEL_ENABLED','OTEL_EXPORTER_OTLP_ENDPOINT','OTEL_SERVICE_NAME'] },
+    envs:['OTEL_ENABLED','OTEL_EXPORTER_OTLP_ENDPOINT','OTEL_SERVICE_NAME'],
+    codeSnippet: null },
 
   // ── API ──
   { id:'fastapi-app', label:'FastAPI App', subtitle:'src/main.py', layer:'api',
@@ -209,37 +233,43 @@ const nodes = [
     desc:'Application entry point — lifespan management, exception handlers, CORS, telemetry init. Auth deferred to reverse proxy.',
     path:'src/main.py + src/api/app.py',
     packages:['fastapi','uvicorn','pydantic-settings'],
-    envs:['API_HOST','API_PORT'] },
+    envs:['API_HOST','API_PORT'],
+    codeSnippet: null },
   { id:'repos-api', label:'Repository API', subtitle:'src/api/routes/repositories.py', layer:'api',
     x:215, y:155, w:W, h:H,
     desc:'CRUD for repositories — register, list (cursor-paginated), update branch_mappings, delete with cascade.',
     path:'src/api/routes/repositories.py',
     packages:['fastapi','sqlalchemy'],
-    envs:[] },
+    envs:[],
+    codeSnippet: null },
   { id:'jobs-api', label:'Jobs API', subtitle:'src/api/routes/jobs.py', layer:'api',
     x:425, y:155, w:W, h:H,
     desc:'Job lifecycle — create (full/incremental), list, cancel, retry. Idempotent: same params returns existing PENDING/RUNNING job.',
     path:'src/api/routes/jobs.py',
     packages:['fastapi','prefect'],
-    envs:['AUTODOC_FLOW_DEPLOYMENT_PREFIX'] },
+    envs:['AUTODOC_FLOW_DEPLOYMENT_PREFIX'],
+    codeSnippet: '@router.post("/jobs")\nasync def create_job(\n    request: JobCreateRequest,\n    repo_repo = Depends(get_repository_repo),\n    job_repo = Depends(get_job_repo)\n) -> JobResponse:\n    # Idempotent: same params returns existing PENDING/RUNNING\n    existing = await job_repo.find_active(\n        request.repository_id, request.branch, request.mode\n    )\n    if existing:\n        return JobResponse.from_orm(existing)\n    job = await job_repo.create(request)\n    # Trigger Prefect flow\n    if request.mode == "full":\n        await run_deployment("full-generation", ...)\n    else:\n        await run_deployment("incremental-update", ...)\n    return JobResponse.from_orm(job)' },
   { id:'docs-api', label:'Documents API', subtitle:'src/api/routes/documents.py', layer:'api',
     x:635, y:155, w:W, h:H,
     desc:'Query generated docs — scopes, hybrid search (semantic+FTS), individual pages, full wiki. Accepts ?branch= and ?scope= params.',
     path:'src/api/routes/documents.py',
     packages:['fastapi','sqlalchemy'],
-    envs:[] },
+    envs:[],
+    codeSnippet: null },
   { id:'webhooks-api', label:'Webhooks', subtitle:'src/api/routes/webhooks.py', layer:'api',
     x:845, y:155, w:155, h:H,
     desc:'POST /webhooks/push — normalizes GitHub/GitLab/Bitbucket push events and triggers incremental jobs.',
     path:'src/api/routes/webhooks.py',
     packages:['fastapi','httpx'],
-    envs:[] },
+    envs:[],
+    codeSnippet: '@router.post("/webhooks/push")\nasync def handle_push_webhook(\n    request: Request,\n    repo_repo: RepositoryRepo = Depends(get_repository_repo)\n) -> WebhookResponse:\n    """Normalize GitHub/GitLab/Bitbucket push → incremental job"""\n    payload = await request.json()\n    provider = detect_provider(request.headers)\n    event = normalize_push_event(provider, payload)\n    repo = await repo_repo.get_by_url(event.repo_url)\n    if not repo:\n        raise HTTPException(404, "Repository not registered")\n    job = await create_incremental_job(\n        repository_id=repo.id,\n        branch=event.branch,\n        commit_sha=event.after_sha\n    )\n    return WebhookResponse(job_id=job.id, status="accepted")' },
   { id:'mcp-server', label:'MCP Server', subtitle:'src/mcp_server.py', layer:'api',
     x:1040, y:155, w:W, h:H,
     desc:'FastMCP server exposing find_repository and query_documents tools for external AI agents.',
     path:'src/mcp_server.py',
     packages:['fastmcp'],
-    envs:[] },
+    envs:[],
+    codeSnippet: 'mcp = FastMCP("autodoc")\n\n@mcp.tool()\nasync def find_repository(search: str) -> list[dict]:\n    """Find repositories matching name/URL/org."""\n    return await repo_repo.search(search)\n\n@mcp.tool()\nasync def query_documents(\n    repository_id: str, query: str,\n    branch: str = None, scope: str = None, limit: int = 10\n) -> list[dict]:\n    """Search generated documentation (semantic + FTS)."""\n    return await search_documents(\n        UUID(repository_id), query, branch, scope, limit\n    )' },
 
   // ── Orchestration ──
   { id:'full-generation', label:'Full Generation', subtitle:'src/flows/full_generation.py', layer:'orchestration',
@@ -247,25 +277,29 @@ const nodes = [
     desc:'@flow: Clone → scan → discover .autodoc.yaml → fan out scope_processing as parallel K8s jobs → create PR → cleanup.',
     path:'src/flows/full_generation.py',
     packages:['prefect'],
-    envs:['PREFECT_WORK_POOL','MAX_REPO_SIZE','MAX_TOTAL_FILES'] },
+    envs:['PREFECT_WORK_POOL','MAX_REPO_SIZE','MAX_TOTAL_FILES'],
+    codeSnippet: '@flow(name="full_generation", retries=0)\nasync def full_generation_flow(\n    repository_id: UUID, branch: str, job_id: UUID,\n    force: bool = False, dry_run: bool = False\n) -> JobResult:\n    repo = await get_repository(repository_id)\n    repo_path, commit_sha = await clone_repository(repo, branch)\n    file_tree = await scan_file_tree(repo_path)\n    configs = await discover_autodoc_configs(repo_path)\n    # Fan out scope processing as parallel K8s jobs\n    scope_results = []\n    for config in configs:\n        result = await run_deployment(\n            "scope-processing",\n            parameters={"repo_path": repo_path, "config": config},\n            work_pool_name=settings.PREFECT_WORK_POOL\n        )\n        scope_results.append(result)\n    if not dry_run:\n        await create_autodoc_pr(repo, branch, scope_results)\n    await cleanup_workspace(repo_path)' },
   { id:'incremental-update', label:'Incremental Update', subtitle:'src/flows/incremental_update.py', layer:'orchestration',
     x:415, y:285, w:200, h:H,
     desc:'@flow: Compare commits via provider API → determine affected scopes → regenerate only changed pages. SHA baseline: min(commit_sha) across scopes.',
     path:'src/flows/incremental_update.py',
     packages:['prefect'],
-    envs:['PREFECT_WORK_POOL'] },
+    envs:['PREFECT_WORK_POOL'],
+    codeSnippet: '@flow(name="incremental_update")\nasync def incremental_update_flow(\n    repository_id: UUID, branch: str, job_id: UUID,\n    dry_run: bool = False\n) -> JobResult:\n    repo = await get_repository(repository_id)\n    # Compare via provider API (not git diff)\n    baseline_sha = get_baseline_sha(repository_id, branch)\n    changes = await repo.provider.compare_commits(\n        baseline_sha, branch\n    )\n    affected_scopes = determine_affected_scopes(changes)\n    for scope in affected_scopes:\n        await run_deployment("scope-processing", ...)\n    if not dry_run:\n        await create_autodoc_pr(repo, branch, results)' },
   { id:'scope-processing', label:'Scope Processing', subtitle:'src/flows/scope_processing.py', layer:'orchestration',
     x:735, y:285, w:190, h:H,
     desc:'@flow per scope (K8s job): extract_structure → [generate_pages ∥ generate_embeddings] → distill_readme. Transaction scope = Prefect task.',
     path:'src/flows/scope_processing.py',
     packages:['prefect','google-adk'],
-    envs:['QUALITY_THRESHOLD','MAX_AGENT_ATTEMPTS'] },
+    envs:['QUALITY_THRESHOLD','MAX_AGENT_ATTEMPTS'],
+    codeSnippet: '@flow(name="scope_processing")\nasync def scope_processing_flow(\n    repo_path: str, config: AutodocConfig,\n    repository_id: UUID, job_id: UUID, commit_sha: str\n) -> ScopeProcessingResult:\n    structure = await extract_structure(repo_path, config)\n    save_wiki_structure(structure)\n    # Generate pages + embeddings in parallel\n    pages, embeddings = await asyncio.gather(\n        generate_pages(structure.pages, repo_path, config),\n        generate_embeddings(structure)\n    )\n    readme = await distill_readme(pages)\n    return ScopeProcessingResult(structure, pages, readme)' },
   { id:'work-pools', label:'Work Pools', subtitle:'orchestrator-pool / k8s-pool', layer:'orchestration',
     x:1050, y:285, w:W, h:H,
     desc:'Three pools: orchestrator-pool (K8s, limit 10), k8s-pool (K8s, limit 50), local-dev (process). Prevents deadlock by pool separation.',
     path:'deployment/k8s/base/workers/',
     packages:['prefect'],
-    envs:['PREFECT_WORK_POOL','PREFECT_API_URL'] },
+    envs:['PREFECT_WORK_POOL','PREFECT_API_URL'],
+    codeSnippet: null },
 
   // ── Agents ──
   { id:'structure-extractor', label:'Structure Extractor', subtitle:'src/agents/structure_extractor/', layer:'agents',
@@ -273,25 +307,29 @@ const nodes = [
     desc:'Generator+Critic loop: discovers module/class hierarchy. MCP filesystem tools to read source. Outputs WikiStructureSpec (sections → PageSpecs).',
     path:'src/agents/structure_extractor/agent.py',
     packages:['google-adk','litellm','fastmcp'],
-    envs:['STRUCTURE_GENERATOR_MODEL','STRUCTURE_CRITIC_MODEL','STRUCTURE_COVERAGE_CRITERION_FLOOR'] },
+    envs:['STRUCTURE_GENERATOR_MODEL','STRUCTURE_CRITIC_MODEL','STRUCTURE_COVERAGE_CRITERION_FLOOR'],
+    codeSnippet: 'class StructureExtractor(BaseAgent[WikiStructureSpec]):\n    def __init__(self, settings: Settings):\n        self.generator = LlmAgent(\n            name="structure_generator",\n            model=get_model(settings.STRUCTURE_GENERATOR_MODEL),\n            instruction=STRUCTURE_GENERATOR_PROMPT,\n            tools=[create_filesystem_toolset(repo_path)]\n        )\n        self.critic = LlmAgent(\n            name="structure_critic",\n            model=get_model(settings.STRUCTURE_CRITIC_MODEL),\n            instruction=STRUCTURE_CRITIC_PROMPT\n        )\n\n    async def run(self, input) -> AgentResult[WikiStructureSpec]:\n        return await run_quality_loop(self.generator, self.critic, ...)' },
   { id:'page-generator', label:'Page Generator', subtitle:'src/agents/page_generator/', layer:'agents',
     x:415, y:415, w:195, h:H,
     desc:'Generator+Critic loop per page: reads source files via MCP, generates markdown. Critic receives source_context for accuracy verification.',
     path:'src/agents/page_generator/agent.py',
     packages:['google-adk','litellm','fastmcp'],
-    envs:['PAGE_GENERATOR_MODEL','PAGE_CRITIC_MODEL','PAGE_ACCURACY_CRITERION_FLOOR','PAGE_GENERATION_CONCURRENCY'] },
+    envs:['PAGE_GENERATOR_MODEL','PAGE_CRITIC_MODEL','PAGE_ACCURACY_CRITERION_FLOOR','PAGE_GENERATION_CONCURRENCY'],
+    codeSnippet: 'class PageGenerator(BaseAgent[GeneratedPage]):\n    """Generates a single wiki page with quality loop."""\n    async def run(self, input: PageGeneratorInput) -> AgentResult[GeneratedPage]:\n        return await run_quality_loop(\n            self.generator, self.critic,\n            initial_message=format_page_prompt(input),\n            parse_output=GeneratedPage.model_validate_json,\n            config=QualityLoopConfig(\n                quality_threshold=settings.QUALITY_THRESHOLD,\n                max_attempts=settings.MAX_AGENT_ATTEMPTS,\n                criterion_floors={"accuracy": settings.PAGE_ACCURACY_CRITERION_FLOOR}\n            )\n        )' },
   { id:'readme-distiller', label:'README Distiller', subtitle:'src/agents/readme_distiller/', layer:'agents',
     x:730, y:415, w:195, h:H,
     desc:'Generator+Critic loop: distills wiki pages into README.md. No MCP tools (works from passed-in content). README not persisted to DB.',
     path:'src/agents/readme_distiller/agent.py',
     packages:['google-adk','litellm'],
-    envs:['README_GENERATOR_MODEL','README_CRITIC_MODEL'] },
+    envs:['README_GENERATOR_MODEL','README_CRITIC_MODEL'],
+    codeSnippet: 'class ReadmeDistiller(BaseAgent[ReadmeOutput]):\n    """Distills wiki pages into README.md."""\n    async def run(self, input: ReadmeDistillerInput) -> AgentResult[ReadmeOutput]:\n        return await run_quality_loop(\n            self.generator, self.critic,\n            initial_message=format_readme_prompt(input),\n            parse_output=ReadmeOutput.model_validate_json,\n            config=QualityLoopConfig(\n                quality_threshold=settings.QUALITY_THRESHOLD,\n                max_attempts=settings.MAX_AGENT_ATTEMPTS\n            )\n        )' },
   { id:'quality-loop', label:'Quality Loop', subtitle:'src/agents/common/loop.py', layer:'agents',
     x:1040, y:415, w:185, h:H,
     desc:'Shared loop: Generate → Parse → Critic eval → check per-criterion floors + overall threshold. AgentResult[T] with evaluation_history, attempts, scores.',
     path:'src/agents/common/loop.py',
     packages:['google-adk'],
-    envs:['QUALITY_THRESHOLD','MAX_AGENT_ATTEMPTS'] },
+    envs:['QUALITY_THRESHOLD','MAX_AGENT_ATTEMPTS'],
+    codeSnippet: 'async def run_quality_loop(\n    generator: LlmAgent,\n    critic: LlmAgent,\n    initial_message: str,\n    parse_output: Callable[[str], T],\n    parse_evaluation: Callable[[str], EvaluationResult],\n    config: QualityLoopConfig,\n    session_service, session_id, runner\n) -> AgentResult[T]:\n    """Loop: Generate → Parse → Critic eval → Check floors"""\n    for attempt in range(1, config.max_attempts + 1):\n        gen_response = await call_agent(runner, generator, ...)\n        parsed = parse_output(gen_response)\n        eval_response = await call_agent(runner, critic, ...)\n        evaluation = parse_evaluation(eval_response)\n        if evaluation.passed and check_criterion_floors(evaluation, config):\n            return AgentResult(output=parsed, score=evaluation.score, ...)\n    return AgentResult(output=parsed, score=evaluation.score, passed=False, ...)' },
 
   // ── Services ──
   { id:'config-loader', label:'Config Loader', subtitle:'src/services/config_loader.py', layer:'services',
@@ -299,31 +337,36 @@ const nodes = [
     desc:'Loads .autodoc.yaml — strict validation (unknown keys warn, invalid fail). include semantics: empty=all, non-empty=ONLY those. Scope overlap auto-exclusion.',
     path:'src/services/config_loader.py',
     packages:['pyyaml','pydantic'],
-    envs:[] },
+    envs:[],
+    codeSnippet: 'class AutodocConfig(BaseModel):\n    """Loaded from .autodoc.yaml"""\n    include: list[str] = []  # empty = all files\n    exclude: list[str] = []\n    custom_instructions: str = ""\n    readme: ReadmeConfig = ReadmeConfig()\n\n    @validator("include", "exclude")\n    def validate_paths(cls, v):\n        # Strict: unknown keys warn, invalid values fail\n        return v\n\n    class ReadmeConfig(BaseModel):\n        output_path: str = "README.md"\n        max_length: int | None = None  # null = unlimited' },
   { id:'chunking', label:'Chunking', subtitle:'src/services/chunking.py', layer:'services',
     x:260, y:545, w:155, h:H,
     desc:'Two-stage: heading-aware split → recursive fallback. 512 token chunks, 50 token overlap. context_prefix for better embeddings.',
     path:'src/services/chunking.py',
     packages:['langchain-text-splitters'],
-    envs:['CHUNK_MAX_TOKENS','CHUNK_OVERLAP_TOKENS','CHUNK_MIN_TOKENS'] },
+    envs:['CHUNK_MAX_TOKENS','CHUNK_OVERLAP_TOKENS','CHUNK_MIN_TOKENS'],
+    codeSnippet: 'def chunk_page(\n    content: str, title: str,\n    max_tokens: int = 512, overlap: int = 50\n) -> list[PageChunk]:\n    """Two-stage: heading-aware split → recursive fallback."""\n    sections = split_by_headings(content)\n    chunks = []\n    for section in sections:\n        if count_tokens(section.text) <= max_tokens:\n            chunks.append(PageChunk(\n                content=section.text,\n                heading_path=section.heading_path,\n                context_prefix=f"{title} > {" > ".join(section.heading_path)}"\n            ))\n        else:\n            # Recursive fallback for large sections\n            sub = recursive_split(section.text, max_tokens, overlap)\n            chunks.extend(sub)\n    return chunks' },
   { id:'embedding', label:'Embedding', subtitle:'src/services/embedding.py', layer:'services',
     x:475, y:545, w:165, h:H,
     desc:'Generates Vector(1024) embeddings via OpenAI text-embedding-3-large. Batched processing (batch_size=100).',
     path:'src/services/embedding.py',
     packages:['httpx'],
-    envs:['EMBEDDING_MODEL','EMBEDDING_DIMENSIONS','EMBEDDING_BATCH_SIZE'] },
+    envs:['EMBEDDING_MODEL','EMBEDDING_DIMENSIONS','EMBEDDING_BATCH_SIZE'],
+    codeSnippet: 'async def generate_embeddings(\n    pages: list[WikiPage], settings: Settings\n) -> list[PageChunk]:\n    chunks = []\n    for page in pages:\n        page_chunks = chunk_page(\n            page.content, page.title,\n            max_tokens=settings.CHUNK_MAX_TOKENS,\n            overlap=settings.CHUNK_OVERLAP_TOKENS\n        )\n        chunks.extend(page_chunks)\n    # Batch embed\n    for batch in batched(chunks, settings.EMBEDDING_BATCH_SIZE):\n        texts = [c.context_prefix + c.content for c in batch]\n        vectors = await embed_texts(texts, model=settings.EMBEDDING_MODEL)\n        for chunk, vec in zip(batch, vectors):\n            chunk.content_embedding = vec\n    return chunks' },
   { id:'hybrid-search', label:'Hybrid Search (RRF)', subtitle:'src/services/search.py', layer:'services',
     x:700, y:545, w:185, h:H,
     desc:'Reciprocal Rank Fusion (k=60): semantic on chunks (best-chunk-wins to page) + FTS on pages. Missing pages use penalty rank 1000.',
     path:'src/services/search.py + src/database/repos/search_repo.py',
     packages:['sqlalchemy','pgvector'],
-    envs:[] },
+    envs:[],
+    codeSnippet: 'async def search_documents(\n    repo_id: UUID, query: str, branch: str = None,\n    scope: str = None, limit: int = 10\n) -> list[SearchResult]:\n    """Hybrid search: RRF(semantic, full-text)"""\n    embedding = await generate_embedding(query)\n    # Semantic: cosine similarity on page_chunks\n    semantic = await search_chunks_by_vector(\n        embedding, repo_id, branch, scope, limit=limit*3\n    )\n    semantic_pages = aggregate_to_pages(semantic)\n    # Full-text: GIN index on wiki_pages.content\n    fts = await search_pages_by_text(\n        query, repo_id, branch, scope, limit=limit*3\n    )\n    # Reciprocal Rank Fusion (k=60)\n    return rrf_merge(semantic_pages, fts, k=60, limit=limit)' },
   { id:'session-mgr', label:'Session Manager', subtitle:'src/services/session.py', layer:'services',
     x:950, y:545, w:175, h:H,
     desc:'Manages ADK DatabaseSessionService — agent conversation history persisted to PostgreSQL, archived to S3 after flow run, then deleted.',
     path:'src/services/session.py',
     packages:['google-adk','boto3'],
-    envs:['SESSION_ARCHIVE_BUCKET'] },
+    envs:['SESSION_ARCHIVE_BUCKET'],
+    codeSnippet: null },
 
   // ── Data ──
   { id:'postgres-autodoc', label:'PostgreSQL (autodoc)', subtitle:'repositories + jobs tables', layer:'data',
@@ -331,31 +374,36 @@ const nodes = [
     desc:'Primary app database. Async engine with configurable pool. Alembic migrations. FK cascade: structures→pages→chunks.',
     path:'src/database/engine.py + models/',
     packages:['sqlalchemy','asyncpg','alembic'],
-    envs:['DATABASE_URL','DB_POOL_SIZE','DB_MAX_OVERFLOW','DB_POOL_TIMEOUT'] },
+    envs:['DATABASE_URL','DB_POOL_SIZE','DB_MAX_OVERFLOW','DB_POOL_TIMEOUT'],
+    codeSnippet: '# Database engine with configurable pool\nengine = create_async_engine(\n    settings.DATABASE_URL,\n    pool_size=settings.DB_POOL_SIZE,\n    max_overflow=settings.DB_MAX_OVERFLOW,\n    pool_timeout=settings.DB_POOL_TIMEOUT,\n    pool_recycle=settings.DB_POOL_RECYCLE\n)\n\nasync_session_factory = async_sessionmaker(\n    engine, class_=AsyncSession, expire_on_commit=False\n)\n\n# FK cascade chain\n# repositories → wiki_structures (CASCADE)\n#   → wiki_pages (CASCADE)\n#     → page_chunks (CASCADE)' },
   { id:'wiki-tables', label:'Wiki Tables', subtitle:'wiki_structures + wiki_pages', layer:'data',
     x:340, y:680, w:190, h:H,
     desc:'wiki_structures keyed on (repo_id, branch, scope_path, version) — up to 3 versions. wiki_pages with GIN index for FTS.',
     path:'src/database/models/wiki_structure.py + wiki_page.py',
     packages:['sqlalchemy','asyncpg'],
-    envs:[] },
+    envs:[],
+    codeSnippet: null },
   { id:'pgvector-chunks', label:'pgvector Chunks', subtitle:'page_chunks + Vector(1024)', layer:'data',
     x:620, y:680, w:190, h:H,
     desc:'page_chunks: content + context_prefix + Vector(1024) embedding + TSVECTOR. Best-chunk-wins aggregation for semantic search.',
     path:'src/database/models/page_chunk.py',
     packages:['pgvector','sqlalchemy'],
-    envs:['EMBEDDING_DIMENSIONS'] },
+    envs:['EMBEDDING_DIMENSIONS'],
+    codeSnippet: null },
   { id:'prefect-db', label:'Prefect DB', subtitle:'PostgreSQL (prefect database)', layer:'data',
     x:900, y:680, w:170, h:H,
     desc:'Separate "prefect" database on same PostgreSQL instance. Auto-managed by Prefect via Alembic on startup.',
     path:'deployment/scripts/init-db.sql',
     packages:['prefect'],
-    envs:['PREFECT_API_DATABASE_CONNECTION_URL','PREFECT_API_DATABASE_MIGRATE_ON_START'] },
+    envs:['PREFECT_API_DATABASE_CONNECTION_URL','PREFECT_API_DATABASE_MIGRATE_ON_START'],
+    codeSnippet: null },
   { id:'redis', label:'Redis', subtitle:'Prefect message broker', layer:'data',
     x:1130, y:680, w:120, h:H,
     desc:'Message broker for Prefect Server — scheduler, event dispatching, work queue messaging.',
     path:'deployment/docker-compose.yml',
     packages:[],
-    envs:['REDIS_URL'] },
+    envs:['REDIS_URL'],
+    codeSnippet: null },
 
   // ── Infrastructure ──
   { id:'api-image', label:'Dockerfile.api', subtitle:'Lightweight 2-stage build', layer:'infrastructure',
@@ -363,25 +411,29 @@ const nodes = [
     desc:'Python 3.11 slim runtime. Healthcheck: HTTP GET /health. Runs uvicorn on port 8080.',
     path:'deployment/docker/Dockerfile.api',
     packages:['fastapi','uvicorn'],
-    envs:[] },
+    envs:[],
+    codeSnippet: null },
   { id:'worker-image', label:'Dockerfile.worker', subtitle:'Prefect kubernetes worker', layer:'infrastructure',
     x:340, y:810, w:195, h:H,
     desc:'Official Prefect image with kubernetes support. Probes Prefect Server for healthcheck. Runs prefect worker start.',
     path:'deployment/docker/Dockerfile.worker',
     packages:['prefect','prefect-kubernetes'],
-    envs:['PREFECT_API_URL','PREFECT_WORK_POOL'] },
+    envs:['PREFECT_API_URL','PREFECT_WORK_POOL'],
+    codeSnippet: null },
   { id:'flow-runner', label:'Dockerfile.flow', subtitle:'Heavy AI image (baked-in)', layer:'infrastructure',
     x:630, y:810, w:195, h:H,
     desc:'All AI dependencies baked in. Build-arg APP_COMMIT_SHA from CI. Pulled by Prefect worker to run K8s jobs.',
     path:'deployment/docker/Dockerfile.flow',
     packages:['google-adk','litellm','langchain-text-splitters','pgvector'],
-    envs:['APP_COMMIT_SHA'] },
+    envs:['APP_COMMIT_SHA'],
+    codeSnippet: null },
   { id:'k8s-cluster', label:'K8s Cluster', subtitle:'Kustomize base + overlays', layer:'infrastructure',
     x:930, y:810, w:185, h:H,
     desc:'Namespace autodoc. Kustomize: base + dev/prod overlays. RBAC for workers. CronJob for cleanup. Ingress for API.',
     path:'deployment/k8s/',
     packages:['kustomize'],
-    envs:[] }
+    envs:[],
+    codeSnippet: null }
 ];
 
 // ════════════════════════════════════════════════════════════════
@@ -904,6 +956,7 @@ function showDetail(id) {
     ${n.envs.length ? `<div class="dp-section">Environment Variables</div><div>${n.envs.map(e => `<div class="dp-env">${e}</div>`).join('')}</div>` : ''}
     <div class="dp-section">Layer</div>
     <div><span class="dp-tag" style="border-color:${LAYERS[n.layer].color};color:${LAYERS[n.layer].color}">${LAYERS[n.layer].label}</span></div>
+    ${n.codeSnippet ? `<button class="dp-tag" style="cursor:pointer;margin-top:8px;border-color:#a855f7;color:#a855f7" onclick="openDrawer('${id}')">View Code</button>` : ''}
     <div class="comment-form">
       <textarea id="comment-input" placeholder="Add a note about this component..."></textarea>
       <button onclick="addComment('${id}')">Add Note</button>
@@ -1205,6 +1258,35 @@ function buildToolbar() {
       render();
     });
   });
+}
+
+// ════════════════════════════════════════════════════════════════
+// CODE DRAWER
+// ════════════════════════════════════════════════════════════════
+function openDrawer(nodeId) {
+  const n = nodeMap[nodeId];
+  if (!n || !n.codeSnippet) return;
+  state.drawerNode = nodeId;
+  document.getElementById('drawer-title').textContent = n.label;
+  document.getElementById('drawer-code').innerHTML = highlightPython(n.codeSnippet);
+  document.getElementById('code-drawer').classList.add('open');
+}
+
+function closeDrawer() {
+  state.drawerNode = null;
+  document.getElementById('code-drawer').classList.remove('open');
+}
+
+function highlightPython(code) {
+  return code
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/("""[\s\S]*?""")/g, '<span class="cm">$1</span>')
+    .replace(/(#[^\n]*)/g, '<span class="cm">$1</span>')
+    .replace(/("(?:[^"\\]|\\.)*")/g, '<span class="str">$1</span>')
+    .replace(/(\'(?:[^\'\\]|\\.)*\')/g, '<span class="str">$1</span>')
+    .replace(/\b(def|async|await|class|return|for|if|else|elif|import|from|with|as|not|and|or|in|try|except|finally|raise|None|True|False|self)\b/g, '<span class="kw">$1</span>')
+    .replace(/\b(str|int|float|bool|list|dict|set|tuple|UUID|Optional|Callable)\b/g, '<span class="tp">$1</span>')
+    .replace(/@(\w+)/g, '<span class="dec">@$1</span>');
 }
 
 // ════════════════════════════════════════════════════════════════
