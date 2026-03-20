@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AutoDoc ADK — Architecture Explorer</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;height:100vh;overflow:hidden}
+.container{display:flex;height:100vh}
+.sidebar{width:320px;min-width:320px;background:#161b22;border-right:1px solid #30363d;display:flex;flex-direction:column;overflow-y:hidden}
+.sidebar h2{font-size:13px;text-transform:uppercase;letter-spacing:.8px;color:#8b949e;padding:14px 16px 8px;border-bottom:1px solid #21262d}
+.sidebar h3{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:#8b949e;padding:10px 16px 4px}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.canvas-wrap{flex:1;position:relative;overflow:hidden;background:#0d1117}
+.prompt-bar{background:#161b22;border-top:1px solid #30363d;padding:12px 16px;max-height:180px;display:flex;gap:10px;align-items:flex-start}
+.prompt-bar pre{flex:1;font-family:'SF Mono',Consolas,monospace;font-size:12px;line-height:1.5;color:#c9d1d9;white-space:pre-wrap;max-height:150px;overflow-y:auto}
+.prompt-bar button{background:#238636;color:#fff;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;white-space:nowrap}
+.prompt-bar button:hover{background:#2ea043}
+.prompt-bar button.copied{background:#1f6feb}
+.preset-grid{display:flex;flex-wrap:wrap;gap:6px;padding:8px 16px 12px}
+.preset-btn{background:#21262d;border:1px solid #30363d;color:#c9d1d9;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:11px;transition:all .15s}
+.preset-btn:hover{border-color:#58a6ff;color:#58a6ff}
+.preset-btn.active{background:#1f6feb;border-color:#1f6feb;color:#fff}
+.layer-item,.conn-item{display:flex;align-items:center;gap:8px;padding:5px 16px;cursor:pointer;font-size:13px;transition:background .1s}
+.layer-item:hover,.conn-item:hover{background:#21262d}
+.layer-item input,.conn-item input{accent-color:#58a6ff}
+.layer-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.conn-line{width:20px;height:3px;flex-shrink:0;border-radius:1px}
+.zoom-controls{position:absolute;top:12px;right:12px;display:flex;flex-direction:column;gap:4px}
+.zoom-btn{background:#21262d;border:1px solid #30363d;color:#c9d1d9;width:32px;height:32px;border-radius:6px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center}
+.zoom-btn:hover{border-color:#58a6ff;color:#58a6ff}
+.detail-panel{padding:12px 16px;border-top:1px solid #21262d}
+.detail-panel .dp-title{font-size:14px;font-weight:600;color:#f0f6fc}
+.detail-panel .dp-path{font-family:'SF Mono',Consolas,monospace;font-size:11px;color:#8b949e;margin:3px 0 8px}
+.detail-panel .dp-desc{font-size:12px;color:#c9d1d9;line-height:1.4;margin-bottom:8px}
+.detail-panel .dp-section{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#8b949e;margin:8px 0 4px}
+.dp-tag{display:inline-block;background:#21262d;border:1px solid #30363d;color:#79c0ff;padding:2px 7px;border-radius:4px;font-size:11px;font-family:'SF Mono',Consolas,monospace;margin:2px}
+.dp-env{font-family:'SF Mono',Consolas,monospace;font-size:11px;color:#7ee787;padding:1px 0}
+.comment-form{margin-top:10px}
+.comment-form textarea{width:100%;background:#0d1117;border:1px solid #30363d;color:#c9d1d9;border-radius:6px;padding:8px;font-size:12px;resize:vertical;min-height:50px;font-family:system-ui}
+.comment-form textarea:focus{outline:none;border-color:#58a6ff}
+.comment-form button{margin-top:6px;background:#21262d;border:1px solid #30363d;color:#c9d1d9;padding:4px 12px;border-radius:6px;cursor:pointer;font-size:11px}
+.comment-form button:hover{border-color:#58a6ff}
+.comment-list{padding:0 16px 12px}
+.comment-item{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:8px 10px;margin-bottom:6px;position:relative}
+.comment-item .ci-target{font-size:11px;font-weight:600;color:#79c0ff}
+.comment-item .ci-text{font-size:12px;color:#c9d1d9;margin-top:3px}
+.comment-item .ci-del{position:absolute;top:6px;right:8px;background:none;border:none;color:#f85149;cursor:pointer;font-size:14px;padding:0 4px}
+.legend{position:absolute;bottom:12px;left:12px;background:rgba(22,27,34,.92);border:1px solid #30363d;border-radius:8px;padding:10px 14px;display:flex;gap:16px;font-size:11px}
+.legend-item{display:flex;align-items:center;gap:6px}
+.legend-line{width:24px;height:0;border-top:2.5px solid}
+.legend-line.dashed{border-top-style:dashed}
+.legend-line.dotted{border-top-style:dotted}
+svg text{user-select:none}
+.node-group{cursor:pointer}
+.node-group:hover rect{filter:brightness(1.25)}
+.node-group.highlighted rect{stroke-width:2.5}
+.node-group.commented rect{stroke-dasharray:4 2}
+.connection-path{fill:none;stroke-width:1.8;transition:opacity .2s}
+.connection-path.dimmed{opacity:.08}
+.connection-path.highlighted{stroke-width:3;opacity:1}
+.marker-arrow{fill:currentColor}
+.search-box{padding:8px 16px}
+.search-box input{width:100%;background:#0d1117;border:1px solid #30363d;color:#c9d1d9;border-radius:6px;padding:6px 10px;font-size:12px}
+.search-box input:focus{outline:none;border-color:#58a6ff}
+.tab-bar{display:flex;border-bottom:1px solid #21262d}
+.tab-btn{flex:1;background:none;border:none;color:#8b949e;padding:8px;font-size:12px;cursor:pointer;border-bottom:2px solid transparent}
+.tab-btn.active{color:#58a6ff;border-bottom-color:#58a6ff}
+.tab-content{display:none}
+.tab-content.active{display:flex;flex-direction:column;flex:1;min-height:0}
+#tab-details,#tab-comments,#tab-views{overflow-y:auto}
+.toolbar{position:absolute;top:12px;left:12px;display:flex;align-items:center;gap:6px;z-index:10;background:rgba(22,27,34,.92);border:1px solid #30363d;border-radius:8px;padding:4px 8px}
+.toolbar-group{display:flex;gap:2px}
+.toolbar-sep{width:1px;height:20px;background:#30363d;margin:0 4px}
+.toolbar-btn,.toolbar-toggle{background:none;border:1px solid transparent;color:#8b949e;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:500;transition:all .15s}
+.toolbar-btn:hover,.toolbar-toggle:hover{color:#c9d1d9;background:#21262d}
+.toolbar-btn.active{color:#fff;background:#1f6feb;border-color:#1f6feb}
+.toolbar-toggle.active{color:#f0f6fc;background:#238636;border-color:#238636}
+.toolbar-toggle.active:hover{background:#2ea043}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="sidebar">
+    <h2>AutoDoc ADK Architecture</h2>
+    <div class="search-box"><input id="search" type="text" placeholder="Search components..."></div>
+    <div class="tab-bar">
+      <button class="tab-btn active" data-tab="views">Views</button>
+      <button class="tab-btn" data-tab="details">Details</button>
+      <button class="tab-btn" data-tab="comments">Notes</button>
+    </div>
+    <div id="tab-views" class="tab-content active">
+      <h3>Presets</h3>
+      <div class="preset-grid" id="presets"></div>
+      <h3>Layers</h3>
+      <div id="layer-toggles"></div>
+      <h3>Connections</h3>
+      <div id="conn-toggles"></div>
+    </div>
+    <div id="tab-details" class="tab-content">
+      <div id="detail-content" class="detail-panel" style="color:#8b949e;font-size:13px">Click a component to see details</div>
+    </div>
+    <div id="tab-comments" class="tab-content">
+      <div id="comment-list" class="comment-list" style="padding-top:8px"></div>
+    </div>
+  </div>
+  <div class="main">
+    <div class="canvas-wrap" id="canvas-wrap">
+      <div class="toolbar" id="toolbar">
+        <div class="toolbar-group">
+          <button class="toolbar-btn active" data-mode="spatial" title="Spatial diagram">Spatial</button>
+          <button class="toolbar-btn" data-mode="sequence" title="Job execution timeline">Sequence</button>
+          <button class="toolbar-btn" data-mode="packages" title="Package dependency matrix">Packages</button>
+        </div>
+        <div class="toolbar-sep"></div>
+        <div class="toolbar-group">
+          <button class="toolbar-toggle" data-overlay="impact" title="Impact analysis">Impact</button>
+          <button class="toolbar-toggle" data-overlay="pathfinder" title="Path finder">Path</button>
+          <button class="toolbar-toggle" data-overlay="k8s" title="K8s status overlay">K8s</button>
+        </div>
+      </div>
+      <svg id="canvas" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div class="zoom-controls">
+        <button class="zoom-btn" onclick="zoom(0.15)">+</button>
+        <button class="zoom-btn" onclick="zoom(-0.15)">−</button>
+        <button class="zoom-btn" onclick="resetView()" style="font-size:11px">⟲</button>
+      </div>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-line" style="border-color:#3b82f6"></div>Data Flow</div>
+        <div class="legend-item"><div class="legend-line dashed" style="border-color:#10b981"></div>Tool / LLM Call</div>
+        <div class="legend-item"><div class="legend-line dashed" style="border-color:#f97316"></div>Async / Event</div>
+        <div class="legend-item"><div class="legend-line dotted" style="border-color:#6b7280"></div>Dependency</div>
+      </div>
+    </div>
+    <div class="prompt-bar">
+      <pre id="prompt-output">Explore the architecture — click components to add notes, toggle layers to focus.</pre>
+      <button id="copy-btn" onclick="copyPrompt()">Copy</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════════
+// LAYER & CONNECTION DEFINITIONS
+// ════════════════════════════════════════════════════════════════
+const LAYERS = {
+  external:       { label: 'External Services',  color: '#3b82f6', fill: '#172554' },
+  api:            { label: 'API Layer',           color: '#f59e0b', fill: '#422006' },
+  orchestration:  { label: 'Orchestration',       color: '#22c55e', fill: '#14532d' },
+  agents:         { label: 'Agent Pipeline',      color: '#a855f7', fill: '#3b0764' },
+  services:       { label: 'Services',            color: '#06b6d4', fill: '#083344' },
+  data:           { label: 'Data Layer',          color: '#ec4899', fill: '#500724' },
+  infrastructure: { label: 'Infrastructure',      color: '#6b7280', fill: '#1f2937' }
+};
+
+const CONN_TYPES = {
+  'data-flow':   { label: 'Data Flow',      color: '#3b82f6', dash: '' },
+  'tool-call':   { label: 'Tool / LLM Call', color: '#10b981', dash: '7,4' },
+  'async-event': { label: 'Async / Event',  color: '#f97316', dash: '5,5' },
+  'dependency':  { label: 'Dependency',      color: '#6b7280', dash: '3,3' }
+};
+
+// ════════════════════════════════════════════════════════════════
+// NODE DEFINITIONS
+// ════════════════════════════════════════════════════════════════
+const W = 172, H = 54;
+const nodes = [
+  // ── External ──
+  { id:'git-providers', label:'Git Providers', subtitle:'GitHub / GitLab / Bitbucket', layer:'external',
+    x:80, y:35, w:W, h:H,
+    desc:'Provider abstraction for clone, PR creation, and commit comparison APIs.',
+    path:'src/providers/{github,bitbucket}.py',
+    packages:['httpx','gitpython'],
+    envs:['GITHUB_TOKEN','GITLAB_TOKEN'] },
+  { id:'llm-providers', label:'LLM Providers', subtitle:'Gemini / OpenAI / Azure / Bedrock', layer:'external',
+    x:420, y:35, w:190, h:H,
+    desc:'Multi-provider LLM access via ADK native Gemini + LiteLLM wrapper for others.',
+    path:'src/config/models.py',
+    packages:['google-adk','litellm'],
+    envs:['DEFAULT_MODEL','STRUCTURE_GENERATOR_MODEL','PAGE_GENERATOR_MODEL','PAGE_CRITIC_MODEL','README_GENERATOR_MODEL'] },
+  { id:'s3-storage', label:'AWS S3', subtitle:'Session archival', layer:'external',
+    x:760, y:35, w:145, h:H,
+    desc:'Object storage for archiving ADK agent sessions after each flow run.',
+    path:'src/services/session.py',
+    packages:['boto3'],
+    envs:['SESSION_ARCHIVE_BUCKET','AWS_REGION'] },
+  { id:'otel-collector', label:'OTEL Collector', subtitle:'Traces & structured logs', layer:'external',
+    x:1060, y:35, w:W, h:H,
+    desc:'OpenTelemetry collector receives traces and correlated structured logs (trace_id + span_id).',
+    path:'src/config/telemetry.py',
+    packages:['opentelemetry-sdk','opentelemetry-exporter-otlp-proto-grpc','opentelemetry-instrumentation-logging'],
+    envs:['OTEL_ENABLED','OTEL_EXPORTER_OTLP_ENDPOINT','OTEL_SERVICE_NAME'] },
+
+  // ── API ──
+  { id:'fastapi-app', label:'FastAPI App', subtitle:'src/main.py', layer:'api',
+    x:20, y:155, w:155, h:H,
+    desc:'Application entry point — lifespan management, exception handlers, CORS, telemetry init. Auth deferred to reverse proxy.',
+    path:'src/main.py + src/api/app.py',
+    packages:['fastapi','uvicorn','pydantic-settings'],
+    envs:['API_HOST','API_PORT'] },
+  { id:'repos-api', label:'Repository API', subtitle:'src/api/routes/repositories.py', layer:'api',
+    x:215, y:155, w:W, h:H,
+    desc:'CRUD for repositories — register, list (cursor-paginated), update branch_mappings, delete with cascade.',
+    path:'src/api/routes/repositories.py',
+    packages:['fastapi','sqlalchemy'],
+    envs:[] },
+  { id:'jobs-api', label:'Jobs API', subtitle:'src/api/routes/jobs.py', layer:'api',
+    x:425, y:155, w:W, h:H,
+    desc:'Job lifecycle — create (full/incremental), list, cancel, retry. Idempotent: same params returns existing PENDING/RUNNING job.',
+    path:'src/api/routes/jobs.py',
+    packages:['fastapi','prefect'],
+    envs:['AUTODOC_FLOW_DEPLOYMENT_PREFIX'] },
+  { id:'docs-api', label:'Documents API', subtitle:'src/api/routes/documents.py', layer:'api',
+    x:635, y:155, w:W, h:H,
+    desc:'Query generated docs — scopes, hybrid search (semantic+FTS), individual pages, full wiki. Accepts ?branch= and ?scope= params.',
+    path:'src/api/routes/documents.py',
+    packages:['fastapi','sqlalchemy'],
+    envs:[] },
+  { id:'webhooks-api', label:'Webhooks', subtitle:'src/api/routes/webhooks.py', layer:'api',
+    x:845, y:155, w:155, h:H,
+    desc:'POST /webhooks/push — normalizes GitHub/GitLab/Bitbucket push events and triggers incremental jobs.',
+    path:'src/api/routes/webhooks.py',
+    packages:['fastapi','httpx'],
+    envs:[] },
+  { id:'mcp-server', label:'MCP Server', subtitle:'src/mcp_server.py', layer:'api',
+    x:1040, y:155, w:W, h:H,
+    desc:'FastMCP server exposing find_repository and query_documents tools for external AI agents.',
+    path:'src/mcp_server.py',
+    packages:['fastmcp'],
+    envs:[] },
+
+  // ── Orchestration ──
+  { id:'full-generation', label:'Full Generation', subtitle:'src/flows/full_generation.py', layer:'orchestration',
+    x:100, y:285, w:195, h:H,
+    desc:'@flow: Clone → scan → discover .autodoc.yaml → fan out scope_processing as parallel K8s jobs → create PR → cleanup.',
+    path:'src/flows/full_generation.py',
+    packages:['prefect'],
+    envs:['PREFECT_WORK_POOL','MAX_REPO_SIZE','MAX_TOTAL_FILES'] },
+  { id:'incremental-update', label:'Incremental Update', subtitle:'src/flows/incremental_update.py', layer:'orchestration',
+    x:415, y:285, w:200, h:H,
+    desc:'@flow: Compare commits via provider API → determine affected scopes → regenerate only changed pages. SHA baseline: min(commit_sha) across scopes.',
+    path:'src/flows/incremental_update.py',
+    packages:['prefect'],
+    envs:['PREFECT_WORK_POOL'] },
+  { id:'scope-processing', label:'Scope Processing', subtitle:'src/flows/scope_processing.py', layer:'orchestration',
+    x:735, y:285, w:190, h:H,
+    desc:'@flow per scope (K8s job): extract_structure → [generate_pages ∥ generate_embeddings] → distill_readme. Transaction scope = Prefect task.',
+    path:'src/flows/scope_processing.py',
+    packages:['prefect','google-adk'],
+    envs:['QUALITY_THRESHOLD','MAX_AGENT_ATTEMPTS'] },
+  { id:'work-pools', label:'Work Pools', subtitle:'orchestrator-pool / k8s-pool', layer:'orchestration',
+    x:1050, y:285, w:W, h:H,
+    desc:'Three pools: orchestrator-pool (K8s, limit 10), k8s-pool (K8s, limit 50), local-dev (process). Prevents deadlock by pool separation.',
+    path:'deployment/k8s/base/workers/',
+    packages:['prefect'],
+    envs:['PREFECT_WORK_POOL','PREFECT_API_URL'] },
+
+  // ── Agents ──
+  { id:'structure-extractor', label:'Structure Extractor', subtitle:'src/agents/structure_extractor/', layer:'agents',
+    x:100, y:415, w:200, h:H,
+    desc:'Generator+Critic loop: discovers module/class hierarchy. MCP filesystem tools to read source. Outputs WikiStructureSpec (sections → PageSpecs).',
+    path:'src/agents/structure_extractor/agent.py',
+    packages:['google-adk','litellm','fastmcp'],
+    envs:['STRUCTURE_GENERATOR_MODEL','STRUCTURE_CRITIC_MODEL','STRUCTURE_COVERAGE_CRITERION_FLOOR'] },
+  { id:'page-generator', label:'Page Generator', subtitle:'src/agents/page_generator/', layer:'agents',
+    x:415, y:415, w:195, h:H,
+    desc:'Generator+Critic loop per page: reads source files via MCP, generates markdown. Critic receives source_context for accuracy verification.',
+    path:'src/agents/page_generator/agent.py',
+    packages:['google-adk','litellm','fastmcp'],
+    envs:['PAGE_GENERATOR_MODEL','PAGE_CRITIC_MODEL','PAGE_ACCURACY_CRITERION_FLOOR','PAGE_GENERATION_CONCURRENCY'] },
+  { id:'readme-distiller', label:'README Distiller', subtitle:'src/agents/readme_distiller/', layer:'agents',
+    x:730, y:415, w:195, h:H,
+    desc:'Generator+Critic loop: distills wiki pages into README.md. No MCP tools (works from passed-in content). README not persisted to DB.',
+    path:'src/agents/readme_distiller/agent.py',
+    packages:['google-adk','litellm'],
+    envs:['README_GENERATOR_MODEL','README_CRITIC_MODEL'] },
+  { id:'quality-loop', label:'Quality Loop', subtitle:'src/agents/common/loop.py', layer:'agents',
+    x:1040, y:415, w:185, h:H,
+    desc:'Shared loop: Generate → Parse → Critic eval → check per-criterion floors + overall threshold. AgentResult[T] with evaluation_history, attempts, scores.',
+    path:'src/agents/common/loop.py',
+    packages:['google-adk'],
+    envs:['QUALITY_THRESHOLD','MAX_AGENT_ATTEMPTS'] },
+
+  // ── Services ──
+  { id:'config-loader', label:'Config Loader', subtitle:'src/services/config_loader.py', layer:'services',
+    x:30, y:545, w:170, h:H,
+    desc:'Loads .autodoc.yaml — strict validation (unknown keys warn, invalid fail). include semantics: empty=all, non-empty=ONLY those. Scope overlap auto-exclusion.',
+    path:'src/services/config_loader.py',
+    packages:['pyyaml','pydantic'],
+    envs:[] },
+  { id:'chunking', label:'Chunking', subtitle:'src/services/chunking.py', layer:'services',
+    x:260, y:545, w:155, h:H,
+    desc:'Two-stage: heading-aware split → recursive fallback. 512 token chunks, 50 token overlap. context_prefix for better embeddings.',
+    path:'src/services/chunking.py',
+    packages:['langchain-text-splitters'],
+    envs:['CHUNK_MAX_TOKENS','CHUNK_OVERLAP_TOKENS','CHUNK_MIN_TOKENS'] },
+  { id:'embedding', label:'Embedding', subtitle:'src/services/embedding.py', layer:'services',
+    x:475, y:545, w:165, h:H,
+    desc:'Generates Vector(1024) embeddings via OpenAI text-embedding-3-large. Batched processing (batch_size=100).',
+    path:'src/services/embedding.py',
+    packages:['httpx'],
+    envs:['EMBEDDING_MODEL','EMBEDDING_DIMENSIONS','EMBEDDING_BATCH_SIZE'] },
+  { id:'hybrid-search', label:'Hybrid Search (RRF)', subtitle:'src/services/search.py', layer:'services',
+    x:700, y:545, w:185, h:H,
+    desc:'Reciprocal Rank Fusion (k=60): semantic on chunks (best-chunk-wins to page) + FTS on pages. Missing pages use penalty rank 1000.',
+    path:'src/services/search.py + src/database/repos/search_repo.py',
+    packages:['sqlalchemy','pgvector'],
+    envs:[] },
+  { id:'session-mgr', label:'Session Manager', subtitle:'src/services/session.py', layer:'services',
+    x:950, y:545, w:175, h:H,
+    desc:'Manages ADK DatabaseSessionService — agent conversation history persisted to PostgreSQL, archived to S3 after flow run, then deleted.',
+    path:'src/services/session.py',
+    packages:['google-adk','boto3'],
+    envs:['SESSION_ARCHIVE_BUCKET'] },
+
+  // ── Data ──
+  { id:'postgres-autodoc', label:'PostgreSQL (autodoc)', subtitle:'repositories + jobs tables', layer:'data',
+    x:50, y:680, w:200, h:H,
+    desc:'Primary app database. Async engine with configurable pool. Alembic migrations. FK cascade: structures→pages→chunks.',
+    path:'src/database/engine.py + models/',
+    packages:['sqlalchemy','asyncpg','alembic'],
+    envs:['DATABASE_URL','DB_POOL_SIZE','DB_MAX_OVERFLOW','DB_POOL_TIMEOUT'] },
+  { id:'wiki-tables', label:'Wiki Tables', subtitle:'wiki_structures + wiki_pages', layer:'data',
+    x:340, y:680, w:190, h:H,
+    desc:'wiki_structures keyed on (repo_id, branch, scope_path, version) — up to 3 versions. wiki_pages with GIN index for FTS.',
+    path:'src/database/models/wiki_structure.py + wiki_page.py',
+    packages:['sqlalchemy','asyncpg'],
+    envs:[] },
+  { id:'pgvector-chunks', label:'pgvector Chunks', subtitle:'page_chunks + Vector(1024)', layer:'data',
+    x:620, y:680, w:190, h:H,
+    desc:'page_chunks: content + context_prefix + Vector(1024) embedding + TSVECTOR. Best-chunk-wins aggregation for semantic search.',
+    path:'src/database/models/page_chunk.py',
+    packages:['pgvector','sqlalchemy'],
+    envs:['EMBEDDING_DIMENSIONS'] },
+  { id:'prefect-db', label:'Prefect DB', subtitle:'PostgreSQL (prefect database)', layer:'data',
+    x:900, y:680, w:170, h:H,
+    desc:'Separate "prefect" database on same PostgreSQL instance. Auto-managed by Prefect via Alembic on startup.',
+    path:'deployment/scripts/init-db.sql',
+    packages:['prefect'],
+    envs:['PREFECT_API_DATABASE_CONNECTION_URL','PREFECT_API_DATABASE_MIGRATE_ON_START'] },
+  { id:'redis', label:'Redis', subtitle:'Prefect message broker', layer:'data',
+    x:1130, y:680, w:120, h:H,
+    desc:'Message broker for Prefect Server — scheduler, event dispatching, work queue messaging.',
+    path:'deployment/docker-compose.yml',
+    packages:[],
+    envs:['REDIS_URL'] },
+
+  // ── Infrastructure ──
+  { id:'api-image', label:'Dockerfile.api', subtitle:'Lightweight 2-stage build', layer:'infrastructure',
+    x:60, y:810, w:185, h:H,
+    desc:'Python 3.11 slim runtime. Healthcheck: HTTP GET /health. Runs uvicorn on port 8080.',
+    path:'deployment/docker/Dockerfile.api',
+    packages:['fastapi','uvicorn'],
+    envs:[] },
+  { id:'worker-image', label:'Dockerfile.worker', subtitle:'Prefect kubernetes worker', layer:'infrastructure',
+    x:340, y:810, w:195, h:H,
+    desc:'Official Prefect image with kubernetes support. Probes Prefect Server for healthcheck. Runs prefect worker start.',
+    path:'deployment/docker/Dockerfile.worker',
+    packages:['prefect','prefect-kubernetes'],
+    envs:['PREFECT_API_URL','PREFECT_WORK_POOL'] },
+  { id:'flow-runner', label:'Dockerfile.flow', subtitle:'Heavy AI image (baked-in)', layer:'infrastructure',
+    x:630, y:810, w:195, h:H,
+    desc:'All AI dependencies baked in. Build-arg APP_COMMIT_SHA from CI. Pulled by Prefect worker to run K8s jobs.',
+    path:'deployment/docker/Dockerfile.flow',
+    packages:['google-adk','litellm','langchain-text-splitters','pgvector'],
+    envs:['APP_COMMIT_SHA'] },
+  { id:'k8s-cluster', label:'K8s Cluster', subtitle:'Kustomize base + overlays', layer:'infrastructure',
+    x:930, y:810, w:185, h:H,
+    desc:'Namespace autodoc. Kustomize: base + dev/prod overlays. RBAC for workers. CronJob for cleanup. Ingress for API.',
+    path:'deployment/k8s/',
+    packages:['kustomize'],
+    envs:[] }
+];
+
+// ════════════════════════════════════════════════════════════════
+// CONNECTION DEFINITIONS
+// ════════════════════════════════════════════════════════════════
+const connections = [
+  // Data Flow (blue)
+  { from:'jobs-api', to:'full-generation', type:'data-flow', label:'trigger full job' },
+  { from:'jobs-api', to:'incremental-update', type:'data-flow', label:'trigger incremental' },
+  { from:'webhooks-api', to:'incremental-update', type:'data-flow', label:'push event' },
+  { from:'full-generation', to:'scope-processing', type:'data-flow', label:'fan out per scope' },
+  { from:'incremental-update', to:'scope-processing', type:'data-flow', label:'changed scopes' },
+  { from:'scope-processing', to:'structure-extractor', type:'data-flow', label:'invoke agent' },
+  { from:'scope-processing', to:'page-generator', type:'data-flow', label:'invoke per page' },
+  { from:'scope-processing', to:'readme-distiller', type:'data-flow', label:'invoke agent' },
+  { from:'structure-extractor', to:'wiki-tables', type:'data-flow', label:'save structure' },
+  { from:'page-generator', to:'wiki-tables', type:'data-flow', label:'save pages' },
+  { from:'embedding', to:'pgvector-chunks', type:'data-flow', label:'save chunks+vectors' },
+  { from:'docs-api', to:'hybrid-search', type:'data-flow', label:'search query' },
+  { from:'mcp-server', to:'hybrid-search', type:'data-flow', label:'query_documents' },
+  { from:'hybrid-search', to:'pgvector-chunks', type:'data-flow', label:'semantic search' },
+  { from:'hybrid-search', to:'wiki-tables', type:'data-flow', label:'full-text search' },
+  { from:'repos-api', to:'postgres-autodoc', type:'data-flow', label:'CRUD repos' },
+  { from:'jobs-api', to:'postgres-autodoc', type:'data-flow', label:'CRUD jobs' },
+  { from:'session-mgr', to:'s3-storage', type:'data-flow', label:'archive sessions' },
+  { from:'chunking', to:'embedding', type:'data-flow', label:'chunks → embed' },
+
+  // Tool / LLM Calls (green)
+  { from:'structure-extractor', to:'llm-providers', type:'tool-call', label:'LLM inference' },
+  { from:'page-generator', to:'llm-providers', type:'tool-call', label:'LLM inference' },
+  { from:'readme-distiller', to:'llm-providers', type:'tool-call', label:'LLM inference' },
+  { from:'embedding', to:'llm-providers', type:'tool-call', label:'embedding API' },
+  { from:'structure-extractor', to:'git-providers', type:'tool-call', label:'MCP file read' },
+  { from:'page-generator', to:'git-providers', type:'tool-call', label:'MCP file read' },
+
+  // Async / Events (orange)
+  { from:'webhooks-api', to:'git-providers', type:'async-event', label:'receive push' },
+  { from:'full-generation', to:'work-pools', type:'async-event', label:'run_deployment()' },
+  { from:'incremental-update', to:'work-pools', type:'async-event', label:'run_deployment()' },
+  { from:'work-pools', to:'scope-processing', type:'async-event', label:'K8s job dispatch' },
+
+  // Dependencies (gray)
+  { from:'fastapi-app', to:'repos-api', type:'dependency', label:'include_router' },
+  { from:'fastapi-app', to:'jobs-api', type:'dependency', label:'include_router' },
+  { from:'fastapi-app', to:'docs-api', type:'dependency', label:'include_router' },
+  { from:'fastapi-app', to:'webhooks-api', type:'dependency', label:'include_router' },
+  { from:'fastapi-app', to:'otel-collector', type:'dependency', label:'TracerProvider' },
+  { from:'scope-processing', to:'config-loader', type:'dependency', label:'load .autodoc.yaml' },
+  { from:'scope-processing', to:'chunking', type:'dependency', label:'chunk pages' },
+  { from:'quality-loop', to:'structure-extractor', type:'dependency', label:'shared loop' },
+  { from:'quality-loop', to:'page-generator', type:'dependency', label:'shared loop' },
+  { from:'quality-loop', to:'readme-distiller', type:'dependency', label:'shared loop' },
+  { from:'session-mgr', to:'postgres-autodoc', type:'dependency', label:'session DB' },
+  { from:'work-pools', to:'prefect-db', type:'dependency', label:'state store' },
+  { from:'work-pools', to:'redis', type:'dependency', label:'broker' },
+  { from:'api-image', to:'k8s-cluster', type:'dependency', label:'deployed' },
+  { from:'worker-image', to:'k8s-cluster', type:'dependency', label:'deployed' },
+  { from:'flow-runner', to:'k8s-cluster', type:'dependency', label:'deployed' },
+  { from:'wiki-tables', to:'postgres-autodoc', type:'dependency', label:'schema' },
+  { from:'pgvector-chunks', to:'postgres-autodoc', type:'dependency', label:'schema + pgvector' }
+];
+
+// ════════════════════════════════════════════════════════════════
+// PRESETS
+// ════════════════════════════════════════════════════════════════
+const PRESETS = {
+  'Full System': {
+    layers: { external:true, api:true, orchestration:true, agents:true, services:true, data:true, infrastructure:true },
+    conns: { 'data-flow':true, 'tool-call':true, 'async-event':true, 'dependency':false }
+  },
+  'Data Pipeline': {
+    layers: { external:true, api:false, orchestration:true, agents:true, services:true, data:true, infrastructure:false },
+    conns: { 'data-flow':true, 'tool-call':true, 'async-event':false, 'dependency':false }
+  },
+  'Agent System': {
+    layers: { external:true, api:false, orchestration:false, agents:true, services:false, data:false, infrastructure:false },
+    conns: { 'data-flow':false, 'tool-call':true, 'async-event':false, 'dependency':true }
+  },
+  'API Surface': {
+    layers: { external:true, api:true, orchestration:false, agents:false, services:true, data:true, infrastructure:false },
+    conns: { 'data-flow':true, 'tool-call':false, 'async-event':true, 'dependency':false }
+  },
+  'Deployment': {
+    layers: { external:false, api:false, orchestration:true, agents:false, services:false, data:true, infrastructure:true },
+    conns: { 'data-flow':false, 'tool-call':false, 'async-event':true, 'dependency':true }
+  }
+};
+
+// ════════════════════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════════════════════
+const state = {
+  layers: { external:true, api:true, orchestration:true, agents:true, services:true, data:true, infrastructure:true },
+  conns: { 'data-flow':true, 'tool-call':true, 'async-event':true, 'dependency':false },
+  comments: [],
+  selectedNode: null,
+  hoveredNode: null,
+  activePreset: 'Full System',
+  zoom: 1,
+  panX: 0,
+  panY: 0,
+  search: '',
+  _rendering: false,
+  canvasMode: 'spatial',
+  overlays: { impact: false, pathfinder: false, k8s: false },
+  impactSource: null,
+  pathStart: null,
+  pathEnd: null,
+  collapsedLayers: {},
+  drawerNode: null,
+  k8sStatus: {}
+};
+
+const nodeMap = {};
+nodes.forEach(n => nodeMap[n.id] = n);
+
+const downstream = {};
+const upstream = {};
+nodes.forEach(n => { downstream[n.id] = []; upstream[n.id] = []; });
+connections.forEach(c => {
+  if (nodeMap[c.from] && nodeMap[c.to]) {
+    downstream[c.from].push({ target: c.to, type: c.type, label: c.label });
+    upstream[c.to].push({ source: c.from, type: c.type, label: c.label });
+  }
+});
+
+function getDownstream(startId, includeTypes) {
+  const visited = new Set();
+  const queue = [startId];
+  visited.add(startId);
+  while (queue.length) {
+    const id = queue.shift();
+    for (const edge of downstream[id] || []) {
+      if (includeTypes && !includeTypes.has(edge.type)) continue;
+      if (!visited.has(edge.target)) {
+        visited.add(edge.target);
+        queue.push(edge.target);
+      }
+    }
+  }
+  visited.delete(startId);
+  return visited;
+}
+
+function getUpstream(startId, includeTypes) {
+  const visited = new Set();
+  const queue = [startId];
+  visited.add(startId);
+  while (queue.length) {
+    const id = queue.shift();
+    for (const edge of upstream[id] || []) {
+      if (includeTypes && !includeTypes.has(edge.type)) continue;
+      if (!visited.has(edge.source)) {
+        visited.add(edge.source);
+        queue.push(edge.source);
+      }
+    }
+  }
+  visited.delete(startId);
+  return visited;
+}
+
+function findPath(startId, endId) {
+  if (startId === endId) return [startId];
+  const visited = new Set([startId]);
+  const queue = [[startId]];
+  while (queue.length) {
+    const path = queue.shift();
+    const current = path[path.length - 1];
+    const neighbors = [
+      ...(downstream[current] || []).map(e => e.target),
+      ...(upstream[current] || []).map(e => e.source)
+    ];
+    for (const next of neighbors) {
+      if (next === endId) return [...path, next];
+      if (!visited.has(next)) {
+        visited.add(next);
+        queue.push([...path, next]);
+      }
+    }
+  }
+  return null;
+}
+
+// ════════════════════════════════════════════════════════════════
+// RENDERING
+// ════════════════════════════════════════════════════════════════
+const svg = document.getElementById('canvas');
+const NS = 'http://www.w3.org/2000/svg';
+
+function el(tag, attrs, parent) {
+  const e = document.createElementNS(NS, tag);
+  if (attrs) Object.entries(attrs).forEach(([k,v]) => e.setAttribute(k, v));
+  if (parent) parent.appendChild(e);
+  return e;
+}
+
+function setupMarkers() {
+  const defs = el('defs', {}, svg);
+  Object.entries(CONN_TYPES).forEach(([type, cfg]) => {
+    const m = el('marker', { id:'arrow-'+type, markerWidth:'8', markerHeight:'6', refX:'7', refY:'3', orient:'auto' }, defs);
+    el('polygon', { points:'0 0, 8 3, 0 6', fill:cfg.color }, m);
+  });
+}
+
+function getConnPoints(from, to) {
+  const fx = from.x + from.w/2, fy = from.y + from.h/2;
+  const tx = to.x + to.w/2, ty = to.y + to.h/2;
+  const dy = Math.abs(fy - ty), dx = Math.abs(fx - tx);
+  if (dy > dx * 0.4) {
+    if (fy < ty) return { x1:fx, y1:from.y+from.h, x2:tx, y2:to.y };
+    return { x1:fx, y1:from.y, x2:tx, y2:to.y+to.h };
+  }
+  if (fx < tx) return { x1:from.x+from.w, y1:fy, x2:to.x, y2:ty };
+  return { x1:from.x, y1:fy, x2:to.x+to.w, y2:ty };
+}
+
+function isNodeVisible(n) {
+  if (!state.layers[n.layer]) return false;
+  if (state.search && !n.label.toLowerCase().includes(state.search) && !n.subtitle.toLowerCase().includes(state.search)) return false;
+  return true;
+}
+
+function isConnVisible(c) {
+  if (!state.conns[c.type]) return false;
+  const fn = nodeMap[c.from], tn = nodeMap[c.to];
+  return fn && tn && isNodeVisible(fn) && isNodeVisible(tn);
+}
+
+function getNodeConns(nodeId) {
+  return connections.filter(c => (c.from === nodeId || c.to === nodeId) && state.conns[c.type]);
+}
+
+function render() {
+  if (state._rendering) return;
+  state._rendering = true;
+  try {
+    if (state.canvasMode === 'sequence') { renderSequence(); updatePrompt(); return; }
+    if (state.canvasMode === 'packages') { renderPackageMatrix(); updatePrompt(); return; }
+    renderSpatial();
+  } finally {
+    state._rendering = false;
+  }
+}
+
+function renderSequence() {
+  svg.innerHTML = '';
+  svg.setAttribute('viewBox', '0 0 900 1100');
+  const NS = 'http://www.w3.org/2000/svg';
+  const t = document.createElementNS(NS, 'text');
+  t.setAttribute('x', '450'); t.setAttribute('y', '100');
+  t.setAttribute('fill', '#8b949e'); t.setAttribute('font-size', '14');
+  t.setAttribute('text-anchor', 'middle');
+  t.textContent = 'Sequence diagram — coming soon';
+  svg.appendChild(t);
+}
+
+function renderPackageMatrix() {
+  svg.innerHTML = '';
+  svg.setAttribute('viewBox', '0 0 900 800');
+  const NS = 'http://www.w3.org/2000/svg';
+  const t = document.createElementNS(NS, 'text');
+  t.setAttribute('x', '450'); t.setAttribute('y', '100');
+  t.setAttribute('fill', '#8b949e'); t.setAttribute('font-size', '14');
+  t.setAttribute('text-anchor', 'middle');
+  t.textContent = 'Package matrix — coming soon';
+  svg.appendChild(t);
+}
+
+function renderSpatial() {
+  svg.innerHTML = '';
+  setupMarkers();
+  const vb = '0 0 1320 900';
+  svg.setAttribute('viewBox', vb);
+  svg.style.width = '100%';
+  svg.style.height = '100%';
+
+  // Background layer labels
+  Object.entries(LAYERS).forEach(([key, cfg]) => {
+    if (!state.layers[key]) return;
+    const layerNodes = nodes.filter(n => n.layer === key && isNodeVisible(n));
+    if (!layerNodes.length) return;
+    const minY = Math.min(...layerNodes.map(n => n.y));
+    el('text', { x:'8', y:String(minY+12), fill:cfg.color, 'font-size':'10', opacity:'0.5', 'font-weight':'600', 'text-transform':'uppercase', 'letter-spacing':'1' }, svg).textContent = cfg.label.toUpperCase();
+  });
+
+  // Connections
+  const connGroup = el('g', { class:'connections' }, svg);
+  connections.forEach(c => {
+    if (!isConnVisible(c)) return;
+    const fn = nodeMap[c.from], tn = nodeMap[c.to];
+    const pts = getConnPoints(fn, tn);
+    const isVert = Math.abs(pts.y1 - pts.y2) > Math.abs(pts.x1 - pts.x2) * 0.4;
+    let d;
+    if (isVert) {
+      const mid = (pts.y1 + pts.y2) / 2;
+      d = `M${pts.x1},${pts.y1} C${pts.x1},${mid} ${pts.x2},${mid} ${pts.x2},${pts.y2}`;
+    } else {
+      const mid = (pts.x1 + pts.x2) / 2;
+      d = `M${pts.x1},${pts.y1} C${mid},${pts.y1} ${mid},${pts.y2} ${pts.x2},${pts.y2}`;
+    }
+    const cfg = CONN_TYPES[c.type];
+    const cls = ['connection-path'];
+    if (state.hoveredNode && c.from !== state.hoveredNode && c.to !== state.hoveredNode) cls.push('dimmed');
+    if (state.hoveredNode && (c.from === state.hoveredNode || c.to === state.hoveredNode)) cls.push('highlighted');
+    const attrs = { d, stroke:cfg.color, class:cls.join(' '), 'marker-end':'url(#arrow-'+c.type+')' };
+    if (cfg.dash) attrs['stroke-dasharray'] = cfg.dash;
+    const path = el('path', attrs, connGroup);
+    // Tooltip
+    const title = el('title', {}, path);
+    title.textContent = c.label || `${fn.label} → ${tn.label}`;
+  });
+
+  // Nodes
+  nodes.forEach(n => {
+    if (!isNodeVisible(n)) return;
+    const cfg = LAYERS[n.layer];
+    const g = el('g', { class:'node-group', 'data-id':n.id }, svg);
+    if (state.selectedNode === n.id) g.classList.add('highlighted');
+    if (state.comments.some(c => c.target === n.id)) g.classList.add('commented');
+
+    el('rect', {
+      x:n.x, y:n.y, width:n.w, height:n.h, rx:'8', ry:'8',
+      fill:cfg.fill, stroke:cfg.color, 'stroke-width': state.selectedNode===n.id ? '2.5' : '1.2'
+    }, g);
+    el('text', {
+      x:n.x+n.w/2, y:n.y+20, fill:'#f0f6fc', 'font-size':'12', 'font-weight':'600', 'text-anchor':'middle'
+    }, g).textContent = n.label;
+    el('text', {
+      x:n.x+n.w/2, y:n.y+35, fill:'#8b949e', 'font-size':'9.5', 'text-anchor':'middle', 'font-family':'SF Mono,Consolas,monospace'
+    }, g).textContent = n.subtitle.length > 28 ? n.subtitle.slice(0,26)+'…' : n.subtitle;
+
+    // Comment indicator
+    const cc = state.comments.filter(c => c.target === n.id).length;
+    if (cc > 0) {
+      el('circle', { cx:n.x+n.w-6, cy:n.y+6, r:'7', fill:'#f97316' }, g);
+      el('text', { x:n.x+n.w-6, y:n.y+10, fill:'#fff', 'font-size':'9', 'text-anchor':'middle', 'font-weight':'700' }, g).textContent = cc;
+    }
+
+    // Events
+    g.addEventListener('click', () => selectNode(n.id));
+    g.addEventListener('mouseenter', () => { state.hoveredNode = n.id; render(); });
+    g.addEventListener('mouseleave', () => { state.hoveredNode = null; render(); });
+  });
+
+  // Transform
+  const wrap = document.getElementById('canvas-wrap');
+  const scale = state.zoom;
+  svg.style.transform = `scale(${scale}) translate(${state.panX}px, ${state.panY}px)`;
+  svg.style.transformOrigin = 'top left';
+
+  updatePrompt();
+}
+
+// ════════════════════════════════════════════════════════════════
+// INTERACTION
+// ════════════════════════════════════════════════════════════════
+function selectNode(id) {
+  state.selectedNode = id;
+  render();
+  showDetail(id);
+  switchTab('details');
+}
+
+function showDetail(id) {
+  const n = nodeMap[id];
+  const panel = document.getElementById('detail-content');
+  const commentedText = state.comments.filter(c => c.target === id).map(c => c.text).join('\n');
+  panel.innerHTML = `
+    <div class="dp-title">${n.label}</div>
+    <div class="dp-path">${n.path}</div>
+    <div class="dp-desc">${n.desc}</div>
+    <div class="dp-section">Packages</div>
+    <div>${n.packages.length ? n.packages.map(p => `<span class="dp-tag">${p}</span>`).join('') : '<span style="color:#8b949e;font-size:11px">None (external service)</span>'}</div>
+    ${n.envs.length ? `<div class="dp-section">Environment Variables</div><div>${n.envs.map(e => `<div class="dp-env">${e}</div>`).join('')}</div>` : ''}
+    <div class="dp-section">Layer</div>
+    <div><span class="dp-tag" style="border-color:${LAYERS[n.layer].color};color:${LAYERS[n.layer].color}">${LAYERS[n.layer].label}</span></div>
+    <div class="comment-form">
+      <textarea id="comment-input" placeholder="Add a note about this component..."></textarea>
+      <button onclick="addComment('${id}')">Add Note</button>
+    </div>
+  `;
+}
+
+function addComment(nodeId) {
+  const input = document.getElementById('comment-input');
+  const text = input.value.trim();
+  if (!text) return;
+  state.comments.push({ id: Date.now(), target: nodeId, targetLabel: nodeMap[nodeId].label, targetFile: nodeMap[nodeId].path, text });
+  input.value = '';
+  renderComments();
+  render();
+}
+
+function deleteComment(id) {
+  state.comments = state.comments.filter(c => c.id !== id);
+  renderComments();
+  render();
+}
+
+function renderComments() {
+  const list = document.getElementById('comment-list');
+  if (!state.comments.length) {
+    list.innerHTML = '<div style="color:#8b949e;font-size:13px;padding:8px 0">No notes yet. Click a component and add notes to build your prompt.</div>';
+    return;
+  }
+  list.innerHTML = state.comments.map(c => `
+    <div class="comment-item">
+      <div class="ci-target">${c.targetLabel}</div>
+      <div class="ci-text">${c.text}</div>
+      <button class="ci-del" onclick="deleteComment(${c.id})">&times;</button>
+    </div>
+  `).join('');
+}
+
+// ════════════════════════════════════════════════════════════════
+// PROMPT
+// ════════════════════════════════════════════════════════════════
+function updatePrompt() {
+  const out = document.getElementById('prompt-output');
+  const visibleLayers = Object.entries(state.layers).filter(([,v]) => v).map(([k]) => LAYERS[k].label);
+  const parts = [];
+
+  if (visibleLayers.length < 7) {
+    parts.push(`Focusing on: ${visibleLayers.join(', ')}.`);
+  } else {
+    parts.push('Showing the full AutoDoc ADK architecture.');
+  }
+
+  if (state.comments.length) {
+    parts.push('\nComponent notes:');
+    state.comments.forEach(c => {
+      parts.push(`\n**${c.targetLabel}** (${c.targetFile}):\n${c.text}`);
+    });
+  }
+
+  if (state.comments.length) {
+    parts.push('\nPlease address the notes above, considering the data flow between the highlighted components.');
+  }
+
+  out.textContent = parts.join('\n');
+}
+
+function copyPrompt() {
+  const text = document.getElementById('prompt-output').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById('copy-btn');
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1500);
+  });
+}
+
+// ════════════════════════════════════════════════════════════════
+// CONTROLS SETUP
+// ════════════════════════════════════════════════════════════════
+function buildControls() {
+  // Presets
+  const presetGrid = document.getElementById('presets');
+  Object.keys(PRESETS).forEach(name => {
+    const btn = document.createElement('button');
+    btn.className = 'preset-btn' + (state.activePreset === name ? ' active' : '');
+    btn.textContent = name;
+    btn.onclick = () => applyPreset(name);
+    presetGrid.appendChild(btn);
+  });
+
+  // Layer toggles
+  const layerDiv = document.getElementById('layer-toggles');
+  Object.entries(LAYERS).forEach(([key, cfg]) => {
+    const item = document.createElement('label');
+    item.className = 'layer-item';
+    item.innerHTML = `<input type="checkbox" ${state.layers[key]?'checked':''} data-layer="${key}"><div class="layer-dot" style="background:${cfg.color}"></div>${cfg.label}`;
+    item.querySelector('input').addEventListener('change', e => {
+      state.layers[key] = e.target.checked;
+      state.activePreset = null;
+      updatePresetBtns();
+      render();
+    });
+    layerDiv.appendChild(item);
+  });
+
+  // Connection toggles
+  const connDiv = document.getElementById('conn-toggles');
+  Object.entries(CONN_TYPES).forEach(([key, cfg]) => {
+    const item = document.createElement('label');
+    item.className = 'conn-item';
+    const style = cfg.dash ? (cfg.dash === '3,3' ? 'dotted' : 'dashed') : 'solid';
+    item.innerHTML = `<input type="checkbox" ${state.conns[key]?'checked':''} data-conn="${key}"><div class="conn-line" style="background:${cfg.color};border-top:3px ${style} ${cfg.color};background:none"></div>${cfg.label}`;
+    item.querySelector('input').addEventListener('change', e => {
+      state.conns[key] = e.target.checked;
+      state.activePreset = null;
+      updatePresetBtns();
+      render();
+    });
+    connDiv.appendChild(item);
+  });
+
+  // Search
+  document.getElementById('search').addEventListener('input', e => {
+    state.search = e.target.value.toLowerCase();
+    render();
+  });
+
+  // Tabs
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+  });
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === 'tab-'+tab));
+}
+
+function applyPreset(name) {
+  const p = PRESETS[name];
+  state.layers = { ...p.layers };
+  state.conns = { ...p.conns };
+  state.activePreset = name;
+
+  // Update checkboxes
+  document.querySelectorAll('[data-layer]').forEach(cb => cb.checked = state.layers[cb.dataset.layer]);
+  document.querySelectorAll('[data-conn]').forEach(cb => cb.checked = state.conns[cb.dataset.conn]);
+  updatePresetBtns();
+  render();
+}
+
+function updatePresetBtns() {
+  document.querySelectorAll('.preset-btn').forEach(btn => btn.classList.toggle('active', btn.textContent === state.activePreset));
+}
+
+// ════════════════════════════════════════════════════════════════
+// ZOOM & PAN
+// ════════════════════════════════════════════════════════════════
+function zoom(delta) {
+  state.zoom = Math.max(0.5, Math.min(2.5, state.zoom + delta));
+  render();
+}
+function resetView() {
+  state.zoom = 1; state.panX = 0; state.panY = 0;
+  render();
+}
+
+let isPanning = false, startX, startY;
+document.getElementById('canvas-wrap').addEventListener('mousedown', e => {
+  if (e.target.closest('.node-group')) return;
+  isPanning = true; startX = e.clientX - state.panX * state.zoom; startY = e.clientY - state.panY * state.zoom;
+});
+document.addEventListener('mousemove', e => {
+  if (!isPanning) return;
+  state.panX = (e.clientX - startX) / state.zoom;
+  state.panY = (e.clientY - startY) / state.zoom;
+  svg.style.transform = `scale(${state.zoom}) translate(${state.panX}px, ${state.panY}px)`;
+});
+document.addEventListener('mouseup', () => isPanning = false);
+document.getElementById('canvas-wrap').addEventListener('wheel', e => {
+  e.preventDefault();
+  zoom(e.deltaY > 0 ? -0.08 : 0.08);
+}, { passive: false });
+
+// ════════════════════════════════════════════════════════════════
+// TOOLBAR
+// ════════════════════════════════════════════════════════════════
+function buildToolbar() {
+  document.querySelectorAll('.toolbar-btn[data-mode]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.canvasMode = btn.dataset.mode;
+      if (btn.dataset.mode !== 'spatial') {
+        Object.keys(state.overlays).forEach(k => state.overlays[k] = false);
+        document.querySelectorAll('.toolbar-toggle').forEach(t => t.classList.remove('active'));
+      }
+      document.querySelectorAll('.toolbar-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === state.canvasMode));
+      document.querySelectorAll('.toolbar-toggle').forEach(t => {
+        t.disabled = state.canvasMode !== 'spatial';
+        t.style.opacity = state.canvasMode !== 'spatial' ? '0.4' : '1';
+      });
+      render();
+    });
+  });
+
+  document.querySelectorAll('.toolbar-toggle[data-overlay]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (state.canvasMode !== 'spatial') return;
+      const key = btn.dataset.overlay;
+      state.overlays[key] = !state.overlays[key];
+      btn.classList.toggle('active', state.overlays[key]);
+      if (!state.overlays[key]) {
+        if (key === 'impact') state.impactSource = null;
+        if (key === 'pathfinder') { state.pathStart = null; state.pathEnd = null; }
+      }
+      render();
+    });
+  });
+}
+
+// ════════════════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════════════════
+buildControls();
+buildToolbar();
+renderComments();
+render();
+</script>
+</body>
+</html>
