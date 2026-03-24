@@ -1,0 +1,12 @@
+version: "1"
+include: []
+exclude:
+  - "packages/"
+  - "*.pyc"
+style:
+  audience: developer
+  tone: technical
+  detail_level: standard
+custom_instructions: "Document the root-level project structure."
+readme:
+  output_path: README.md
