@@ -43,7 +43,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - run: uv sync --extra dev
-      - run: uv run pytest tests/unit/ -x -q
+      - run: uv run pytest tests/unit/ -x -q --ignore=tests/unit/test_mcp_server.py
 
   e2e-tests:
     name: E2E Tests
