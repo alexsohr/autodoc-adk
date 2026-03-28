@@ -1,4 +1,4 @@
-.PHONY: up down clean dev-up dev-down dev-clean migrate api worker deploy-local deploy-flows test test-unit test-integration lint
+.PHONY: up down clean dev-up dev-down dev-clean migrate api worker deploy-local deploy-flows test test-unit test-integration lint test-e2e test-all test-e2e-clean
 
 # ── Full Stack ──
 
@@ -64,3 +64,14 @@ test-integration:
 
 lint:
 	cd .. && uv run ruff check src/ tests/
+
+# ── E2E Tests ──
+
+test-e2e:
+	cd .. && uv run pytest tests/e2e/ -m e2e -x -v
+
+test-all:
+	cd .. && uv run pytest tests/
+
+test-e2e-clean:
+	docker ps -q --filter "label=testcontainers" | xargs -r docker rm -f

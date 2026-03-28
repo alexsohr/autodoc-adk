@@ -1,0 +1,11 @@
+version: "1"
+include: []
+exclude:
+  - "*.pyc"
+style:
+  audience: developer
+  tone: technical
+  detail_level: comprehensive
+custom_instructions: "Document the API package endpoints and schemas."
+readme:
+  output_path: README.md

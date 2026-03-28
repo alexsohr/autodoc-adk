@@ -1,0 +1,16 @@
+version: "1"
+include: []
+exclude:
+  - "*.pyc"
+  - "__pycache__"
+style:
+  audience: developer
+  tone: technical
+  detail_level: standard
+custom_instructions: "Focus on the core module architecture and utility functions."
+readme:
+  output_path: README.md
+  max_length: null
+  include_toc: true
+pull_request:
+  auto_merge: false

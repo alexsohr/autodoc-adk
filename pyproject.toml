@@ -33,6 +33,8 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24.0",
     "ruff>=0.8.0",
+    "testcontainers[postgres]>=4.0.0",
+    "httpx>=0.28.0",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -84,4 +86,5 @@ filterwarnings = [
 ]
 markers = [
     "integration: integration tests exercising Prefect flow orchestration",
+    "e2e: end-to-end tests with real database",
 ]

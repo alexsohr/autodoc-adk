@@ -34,6 +34,12 @@ def _make_temp_dir(prefix: str = "autodoc_", age_seconds: float = 0.0) -> Path:
 class TestCleanupOrphanWorkspaces:
     """Tests for the cleanup_orphan_workspaces Prefect flow."""
 
+    @pytest.fixture(autouse=True)
+    def _patch_settings(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Ensure get_settings().CLONE_DIR is empty so the code uses tempfile.gettempdir()."""
+        fake_settings = type("FakeSettings", (), {"CLONE_DIR": ""})()
+        monkeypatch.setattr("src.flows.tasks.cleanup.get_settings", lambda: fake_settings)
+
     async def test_removes_old_directories(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Directories older than 1 hour should be removed."""
         monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
