@@ -1,0 +1,161 @@
+/* Sidebar — dark theme, collapsible */
+
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 60;
+  width: 240px;
+  display: flex;
+  flex-direction: column;
+  padding: 1rem 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  transition: width 200ms ease-out;
+}
+
+.sidebar--collapsed {
+  width: 64px;
+}
+
+/* Brand */
+.sidebar__brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.sidebar__brand-icon {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  border-radius: 8px;
+  background: var(--autodoc-primary);
+  color: var(--autodoc-on-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.875rem;
+}
+
+.sidebar__brand-text {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.sidebar__brand-name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--autodoc-inverse-on-surface);
+  line-height: 1.2;
+}
+
+.sidebar__brand-sub {
+  font-size: 0.625rem;
+  color: var(--autodoc-sidebar-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-top: 0.125rem;
+}
+
+/* Nav */
+.sidebar__nav {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+/* Nav items */
+.sidebar__item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  margin: 0 0.5rem;
+  border-radius: 8px;
+  color: var(--autodoc-sidebar-text-muted);
+  text-decoration: none;
+  font-size: 0.875rem;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background-color 200ms ease-out, color 200ms ease-out;
+  cursor: pointer;
+}
+
+.sidebar__item:hover {
+  color: var(--autodoc-sidebar-text-hover);
+  background-color: var(--autodoc-sidebar-item-hover-bg);
+}
+
+/* Active state — pill shape */
+.sidebar__item--active {
+  background-color: var(--autodoc-primary-fixed);
+  color: var(--autodoc-on-primary-fixed);
+}
+
+.sidebar__item--active:hover {
+  background-color: var(--autodoc-primary-fixed-dim);
+  color: var(--autodoc-on-primary-fixed);
+}
+
+/* Icon-only mode */
+.sidebar__item--icon-only {
+  justify-content: center;
+  padding: 0.5rem;
+}
+
+.sidebar__item-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Section dividers */
+.sidebar__section {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.sidebar__section-label {
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--autodoc-sidebar-text-dim);
+  padding: 0.5rem 1.5rem 0.25rem;
+}
+
+.sidebar__empty-hint {
+  font-size: 0.75rem;
+  color: var(--autodoc-sidebar-text-dim);
+  padding: 0.25rem 1.5rem;
+  font-style: italic;
+}
+
+/* Collapse toggle */
+.sidebar__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0.5rem;
+  padding: 0.5rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--autodoc-sidebar-text-muted);
+  cursor: pointer;
+  transition: background-color 200ms ease-out, color 200ms ease-out;
+}
+
+.sidebar__toggle:hover {
+  background-color: var(--autodoc-sidebar-item-hover-bg);
+  color: var(--autodoc-sidebar-text-hover);
+}

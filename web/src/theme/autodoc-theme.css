@@ -233,14 +233,15 @@
    ============================================================ */
 
 .autodoc-sidebar {
-  background-color: var(--autodoc-inverse-surface);
+  background-color: var(--autodoc-sidebar-bg);
   color: var(--autodoc-inverse-on-surface);
 }
 
 .autodoc-sidebar-item--active {
-  background-color: var(--autodoc-primary-fixed);
-  color: var(--autodoc-on-primary-fixed);
-  border-radius: 9999px;
+  background-color: var(--autodoc-sidebar-item-active-bg);
+  color: #bfdbfe;
+  border-left: 4px solid var(--autodoc-sidebar-item-active-border);
+  border-radius: var(--autodoc-radius-xl);
 }
 
 /* ============================================================
