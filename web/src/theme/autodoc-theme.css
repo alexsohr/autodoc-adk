@@ -362,13 +362,13 @@
 }
 
 .autodoc-badge--success {
-  background-color: var(--autodoc-success-bg);
-  color: var(--autodoc-success);
+  background-color: var(--autodoc-secondary-fixed);
+  color: var(--autodoc-on-secondary-fixed-variant);
 }
 
 .autodoc-badge--warning {
-  background-color: var(--autodoc-warning-bg);
-  color: var(--autodoc-warning);
+  background-color: var(--autodoc-tertiary-fixed);
+  color: var(--autodoc-on-tertiary-fixed-variant);
 }
 
 .autodoc-badge--error {
@@ -399,12 +399,23 @@
 }
 
 /* ============================================================
-   12. INPUT FIELDS — minimal, bottom-bar focus
+   12. INPUT FIELDS — tonal bg, no border, bottom-bar focus
    ============================================================ */
 
-.salt-provider [class*="saltInput"],
-.salt-provider [class*="saltFormField"] {
+.salt-provider [class*="saltInput"] {
   background-color: var(--autodoc-surface-container-high);
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: var(--autodoc-radius-xl) var(--autodoc-radius-xl) 0 0;
+  transition: border-color 200ms ease-out;
+}
+
+.salt-provider [class*="saltInput"]:focus-within {
+  border-bottom-color: var(--autodoc-primary);
+}
+
+.salt-provider [class*="saltFormField"] {
+  background-color: transparent;
 }
 
 /* ============================================================
