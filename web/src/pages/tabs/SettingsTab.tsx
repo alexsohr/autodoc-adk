@@ -1,6 +1,6 @@
 import { type ReactNode, useState, useMemo, useCallback } from "react";
 import { useParams } from "react-router-dom";
-import { Button, Input, FormField, FormFieldLabel } from "@salt-ds/core";
+import { Button, Input, MultilineInput, FormField, FormFieldLabel } from "@salt-ds/core";
 import { RoleGate } from "@/contexts/AuthContext";
 import {
   DataTable,
@@ -112,10 +112,9 @@ function GeneralSettings({ repoId }: { repoId: string }): ReactNode {
           <h3 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "1rem" }}>Description</h3>
           <FormField>
             <FormFieldLabel>Description</FormFieldLabel>
-            <Input
+            <MultilineInput
               value={effectiveDescription}
-              onChange={(event) => setDescription(event.target.value)}
-              multiline
+              textAreaProps={{ onChange: (event) => setDescription(event.target.value) }}
               rows={3}
             />
           </FormField>
@@ -322,7 +321,7 @@ function BranchSettings({ repoId }: { repoId: string }): ReactNode {
             <FormFieldLabel>Source Branch</FormFieldLabel>
             <Input
               value={newSource}
-              onChange={(event) => setNewSource(event.target.value)}
+              inputProps={{ onChange: (event) => setNewSource(event.target.value) }}
               placeholder="main"
             />
           </FormField>
@@ -330,7 +329,7 @@ function BranchSettings({ repoId }: { repoId: string }): ReactNode {
             <FormFieldLabel>Wiki Branch</FormFieldLabel>
             <Input
               value={newWiki}
-              onChange={(event) => setNewWiki(event.target.value)}
+              inputProps={{ onChange: (event) => setNewWiki(event.target.value) }}
               placeholder="autodoc/main"
             />
           </FormField>
@@ -513,19 +512,20 @@ output:
             YAML
           </span>
         </div>
-        <Input
+        <MultilineInput
           value={config}
-          onChange={(event) => setConfig(event.target.value)}
-          multiline
-          rows={16}
-          style={{
-            fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
-            fontSize: "0.8125rem",
-            lineHeight: 1.6,
-            resize: "vertical",
-            minHeight: "300px",
+          textAreaProps={{
+            onChange: (event) => setConfig(event.target.value),
+            spellCheck: false,
+            style: {
+              fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+              fontSize: "0.8125rem",
+              lineHeight: "1.6",
+              resize: "vertical",
+              minHeight: "300px",
+            },
           }}
-          inputProps={{ spellCheck: false }}
+          rows={16}
         />
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.75rem" }}>
           <Button appearance="transparent" onClick={() => setConfig(defaultConfig)}>

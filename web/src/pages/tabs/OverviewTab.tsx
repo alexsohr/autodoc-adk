@@ -7,7 +7,6 @@ import {
   DataTable,
   SectionErrorBoundary,
 } from "@/components/shared";
-import { MaterialIcon } from "@/components/shared/MaterialIcon";
 import { useRepoOverview, useJobProgress, useCreateJob } from "@/api/hooks";
 import { useRepoContext } from "@/pages/RepoWorkspace";
 import type { ScopeSummary, ActivityEvent, ActivityEventType } from "@/types";
@@ -673,7 +672,7 @@ export default function OverviewTab(): ReactNode {
               <MetricCard
                 label="Doc Pages"
                 value={overview.page_count.toLocaleString()}
-                delta={overview.page_count > 0 ? { value: 2, direction: "up" } : undefined}
+                delta={overview.page_count > 0 ? "+2" : undefined}
                 icon="description"
               />
               <MetricCard

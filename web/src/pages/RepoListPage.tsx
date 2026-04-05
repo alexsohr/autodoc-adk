@@ -388,7 +388,7 @@ function AddRepoDialog({ open, onClose }: AddRepoDialogProps): ReactNode {
             <FormFieldLabel>Repository URL *</FormFieldLabel>
             <Input
               value={url}
-              onChange={(event) => setUrl(event.target.value)}
+              inputProps={{ onChange: (event) => setUrl(event.target.value) }}
               placeholder="https://github.com/org/repo"
             />
           </FormField>
@@ -398,7 +398,7 @@ function AddRepoDialog({ open, onClose }: AddRepoDialogProps): ReactNode {
             <FormFieldLabel>Name *</FormFieldLabel>
             <Input
               value={name}
-              onChange={(event) => setName(event.target.value)}
+              inputProps={{ onChange: (event) => setName(event.target.value) }}
               placeholder="my-project"
             />
           </FormField>
@@ -443,7 +443,7 @@ function AddRepoDialog({ open, onClose }: AddRepoDialogProps): ReactNode {
             <FormFieldLabel>Default Branch</FormFieldLabel>
             <Input
               value={defaultBranch}
-              onChange={(event) => setDefaultBranch(event.target.value)}
+              inputProps={{ onChange: (event) => setDefaultBranch(event.target.value) }}
               placeholder="main"
             />
           </FormField>
@@ -453,7 +453,7 @@ function AddRepoDialog({ open, onClose }: AddRepoDialogProps): ReactNode {
             <FormFieldLabel>Description</FormFieldLabel>
             <Input
               value={description}
-              onChange={(event) => setDescription(event.target.value)}
+              inputProps={{ onChange: (event) => setDescription(event.target.value) }}
               placeholder="Optional description..."
             />
           </FormField>
