@@ -8,7 +8,7 @@
   border-radius: 9999px;
   padding: 0.375rem 0.75rem;
 
-  /* Glass: surface-container-lowest at 80% opacity + 16px blur */
+  /* Glass: uses --autodoc-glass-bg and --autodoc-glass-blur tokens */
   background-color: var(--autodoc-glass-bg);
   backdrop-filter: blur(var(--autodoc-glass-blur));
   -webkit-backdrop-filter: blur(var(--autodoc-glass-blur));
