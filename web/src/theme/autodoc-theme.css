@@ -32,12 +32,16 @@
   --autodoc-secondary-fixed-dim: #b8c3ff;
   --autodoc-on-secondary: #ffffff;
   --autodoc-on-secondary-container: #3f4b84;
+  --autodoc-on-secondary-fixed: #06154e;
+  --autodoc-on-secondary-fixed-variant: #36437b;
 
   /* Tertiary / Warning */
   --autodoc-tertiary: #974300;
   --autodoc-tertiary-container: #be5600;
   --autodoc-tertiary-fixed: #ffdbc9;
   --autodoc-tertiary-fixed-dim: #ffb68e;
+  --autodoc-on-tertiary-fixed: #331200;
+  --autodoc-on-tertiary-fixed-variant: #763300;
 
   /* Error */
   --autodoc-error: #ba1a1a;
@@ -74,6 +78,15 @@
   --autodoc-inverse-on-surface: #f2efff;
   --autodoc-inverse-primary: #b8c3ff;
 
+  /* Sidebar — uses Stitch overrideNeutralColor */
+  --autodoc-sidebar-bg: #1e1e2e;
+  --autodoc-sidebar-text-muted: #9898b0;
+  --autodoc-sidebar-text-dim: #6b6b82;
+  --autodoc-sidebar-text-hover: #e0e0ec;
+  --autodoc-sidebar-item-hover-bg: rgba(255, 255, 255, 0.05);
+  --autodoc-sidebar-item-active-bg: rgba(59, 130, 246, 0.2);
+  --autodoc-sidebar-item-active-border: #3b82f6;
+
   /* Outline */
   --autodoc-outline: #747686;
   --autodoc-outline-variant: #c4c5d7;
@@ -85,6 +98,7 @@
   /* Glassmorphism */
   --autodoc-glass-opacity: 0.85;
   --autodoc-glass-blur: 20px;
+  --autodoc-glass-bg: rgba(255, 255, 255, 0.85);
 
   /* Gradient */
   --autodoc-gradient-cta: linear-gradient(135deg, #264dd9, #4568f3);
@@ -100,6 +114,30 @@
   align-items: center;
   justify-content: center;
   vertical-align: middle;
+}
+
+/* ============================================================
+   BORDER RADIUS SCALE — from Stitch Tailwind config
+   ============================================================ */
+:root {
+  --autodoc-radius-default: 0.125rem;
+  --autodoc-radius-lg: 0.25rem;
+  --autodoc-radius-xl: 0.5rem;
+  --autodoc-radius-full: 0.75rem;
+  --autodoc-radius-pill: 9999px;
+}
+
+/* ============================================================
+   SPACING SCALE — from Stitch spacingScale: 2
+   ============================================================ */
+:root {
+  --autodoc-spacing-xs: 0.25rem;
+  --autodoc-spacing-sm: 0.5rem;
+  --autodoc-spacing-md: 0.75rem;
+  --autodoc-spacing-lg: 1rem;
+  --autodoc-spacing-xl: 1.5rem;
+  --autodoc-spacing-2xl: 2rem;
+  --autodoc-spacing-3xl: 3rem;
 }
 
 /* ============================================================
@@ -261,6 +299,52 @@
   text-transform: uppercase;
 }
 
+.autodoc-display-md {
+  font-size: 2.5rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.autodoc-display-sm {
+  font-size: 2rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.autodoc-headline-sm {
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.autodoc-body-lg {
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1.6;
+}
+
+.autodoc-body-sm {
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.autodoc-label-lg {
+  font-size: 0.875rem;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.autodoc-label-sm {
+  font-size: 0.65rem;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
 /* ============================================================
    10. STATUS BADGE PILLS — full radius
    ============================================================ */
@@ -327,9 +411,9 @@
    ============================================================ */
 
 .autodoc-section-gap {
-  margin-bottom: 1.5rem;
+  margin-bottom: var(--autodoc-spacing-xl);
 }
 
 .autodoc-page-padding {
-  padding: 1.5rem 2rem;
+  padding: var(--autodoc-spacing-xl) var(--autodoc-spacing-2xl);
 }
