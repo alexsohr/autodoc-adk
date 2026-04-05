@@ -1,0 +1,335 @@
+/*
+ * AutoDoc Custom Theme
+ * Maps Stitch design tokens to Salt DS CSS custom properties.
+ * Design system: "The Digital Curator" — editorial, high-end, tonal layering.
+ *
+ * Key rules:
+ * 1. NO 1px borders for sectioning — use tonal layering via background shifts
+ * 2. Glassmorphism on floating elements (85% opacity + 20px backdrop-blur)
+ * 3. Gradient CTA buttons (135deg, primary → primary_container)
+ * 4. Tonal depth via 5-tier surface hierarchy
+ * 5. Inter typeface throughout
+ */
+
+/* ============================================================
+   1. PALETTE — raw color values from Stitch design tokens
+   ============================================================ */
+:root {
+  /* Primary */
+  --autodoc-primary: #264dd9;
+  --autodoc-primary-container: #4568f3;
+  --autodoc-primary-fixed: #dde1ff;
+  --autodoc-primary-fixed-dim: #b8c3ff;
+  --autodoc-on-primary: #ffffff;
+  --autodoc-on-primary-container: #fffbff;
+  --autodoc-on-primary-fixed: #001355;
+  --autodoc-on-primary-fixed-variant: #0035bd;
+
+  /* Secondary */
+  --autodoc-secondary: #4e5b95;
+  --autodoc-secondary-container: #b1befe;
+  --autodoc-secondary-fixed: #dde1ff;
+  --autodoc-secondary-fixed-dim: #b8c3ff;
+  --autodoc-on-secondary: #ffffff;
+  --autodoc-on-secondary-container: #3f4b84;
+
+  /* Tertiary / Warning */
+  --autodoc-tertiary: #974300;
+  --autodoc-tertiary-container: #be5600;
+  --autodoc-tertiary-fixed: #ffdbc9;
+  --autodoc-tertiary-fixed-dim: #ffb68e;
+
+  /* Error */
+  --autodoc-error: #ba1a1a;
+  --autodoc-error-container: #ffdad6;
+  --autodoc-on-error: #ffffff;
+  --autodoc-on-error-container: #93000a;
+
+  /* Custom functional colors */
+  --autodoc-success: #2e7d32;
+  --autodoc-success-bg: #e8f5e9;
+  --autodoc-warning: #e65100;
+  --autodoc-warning-bg: #fff3e0;
+  --autodoc-info: #264dd9;
+  --autodoc-info-bg: #dde1ff;
+
+  /* Surfaces — 5-tier tonal system */
+  --autodoc-surface: #fcf8ff;
+  --autodoc-surface-dim: #dad8ee;
+  --autodoc-surface-bright: #fcf8ff;
+  --autodoc-surface-container-lowest: #ffffff;
+  --autodoc-surface-container-low: #f5f2ff;
+  --autodoc-surface-container: #efecff;
+  --autodoc-surface-container-high: #e8e6fc;
+  --autodoc-surface-container-highest: #e3e0f7;
+  --autodoc-surface-variant: #e3e0f7;
+
+  /* On-surface */
+  --autodoc-on-surface: #1a1a2a;
+  --autodoc-on-surface-variant: #444655;
+  --autodoc-surface-tint: #294fdb;
+
+  /* Inverse (sidebar) */
+  --autodoc-inverse-surface: #2f2f40;
+  --autodoc-inverse-on-surface: #f2efff;
+  --autodoc-inverse-primary: #b8c3ff;
+
+  /* Outline */
+  --autodoc-outline: #747686;
+  --autodoc-outline-variant: #c4c5d7;
+
+  /* Ambient shadow — tinted, never pure black */
+  --autodoc-shadow-ambient: 0px 12px 32px rgba(26, 26, 42, 0.06);
+  --autodoc-shadow-float: 0px 8px 24px rgba(26, 26, 42, 0.1);
+
+  /* Glassmorphism */
+  --autodoc-glass-opacity: 0.85;
+  --autodoc-glass-blur: 20px;
+
+  /* Gradient */
+  --autodoc-gradient-cta: linear-gradient(135deg, #264dd9, #4568f3);
+}
+
+/* ============================================================
+   MATERIAL SYMBOLS — base icon style
+   ============================================================ */
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+}
+
+/* ============================================================
+   2. SALT DS OVERRIDES — map palette to Salt token system
+   ============================================================ */
+.salt-provider {
+  /* Typography — Inter */
+  --salt-text-fontFamily: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+
+  /* Primary background surfaces */
+  --salt-container-primary-background: var(--autodoc-surface);
+  --salt-container-secondary-background: var(--autodoc-surface-container-low);
+  --salt-container-tertiary-background: var(--autodoc-surface-container);
+
+  /* Content colors */
+  --salt-content-primary-foreground: var(--autodoc-on-surface);
+  --salt-content-secondary-foreground: var(--autodoc-on-surface-variant);
+
+  /* Actionable (buttons, links) */
+  --salt-actionable-primary-background: var(--autodoc-primary);
+  --salt-actionable-primary-background-hover: var(--autodoc-primary-container);
+  --salt-actionable-primary-foreground: var(--autodoc-on-primary);
+  --salt-actionable-secondary-background: var(--autodoc-surface-container-lowest);
+  --salt-actionable-secondary-foreground: var(--autodoc-primary);
+  --salt-actionable-accented-background: var(--autodoc-primary);
+  --salt-actionable-accented-foreground: var(--autodoc-on-primary);
+
+  /* Status */
+  --salt-status-positive-foreground: var(--autodoc-success);
+  --salt-status-positive-background: var(--autodoc-success-bg);
+  --salt-status-warning-foreground: var(--autodoc-warning);
+  --salt-status-warning-background: var(--autodoc-warning-bg);
+  --salt-status-negative-foreground: var(--autodoc-error);
+  --salt-status-negative-background: var(--autodoc-error-container);
+  --salt-status-info-foreground: var(--autodoc-info);
+  --salt-status-info-background: var(--autodoc-info-bg);
+
+  /* Separable — enforce no-border rule via transparent */
+  --salt-separable-primary-borderColor: transparent;
+  --salt-separable-secondary-borderColor: transparent;
+  --salt-separable-tertiary-borderColor: transparent;
+
+  /* Focused */
+  --salt-focused-outlineColor: var(--autodoc-primary);
+
+  /* Selected */
+  --salt-selectable-background-selected: var(--autodoc-primary-fixed);
+  --salt-selectable-foreground-selected: var(--autodoc-on-primary-fixed);
+}
+
+/* ============================================================
+   3. NO 1PX BORDERS — enforce tonal layering
+   ============================================================ */
+
+/* Remove default card/panel borders, use tonal backgrounds */
+.salt-provider [class*="saltCard"],
+.salt-provider [class*="saltPanel"] {
+  border: none !important;
+  box-shadow: none;
+}
+
+/* ============================================================
+   4. GLASSMORPHISM — floating elements
+   ============================================================ */
+
+/* Dialog / overlay glassmorphism */
+.salt-provider [class*="saltDialog"],
+.salt-provider [class*="saltOverlay"] {
+  background-color: rgba(255, 255, 255, var(--autodoc-glass-opacity)) !important;
+  backdrop-filter: blur(var(--autodoc-glass-blur));
+  -webkit-backdrop-filter: blur(var(--autodoc-glass-blur));
+}
+
+/* ============================================================
+   5. GRADIENT CTA BUTTON
+   ============================================================ */
+
+/* Accented solid buttons get the signature gradient */
+.salt-provider .saltButton-accented[class*="solid"] {
+  background: var(--autodoc-gradient-cta) !important;
+  border: none;
+  transition: opacity 200ms ease-out, transform 200ms ease-out;
+}
+
+.salt-provider .saltButton-accented[class*="solid"]:hover {
+  opacity: 0.92;
+  transform: translateY(-1px);
+}
+
+/* ============================================================
+   6. SIDEBAR — dark theme
+   ============================================================ */
+
+.autodoc-sidebar {
+  background-color: var(--autodoc-inverse-surface);
+  color: var(--autodoc-inverse-on-surface);
+}
+
+.autodoc-sidebar-item--active {
+  background-color: var(--autodoc-primary-fixed);
+  color: var(--autodoc-on-primary-fixed);
+  border-radius: 9999px;
+}
+
+/* ============================================================
+   7. AMBIENT SHADOWS — tinted, never pure black
+   ============================================================ */
+
+.autodoc-card-elevated {
+  box-shadow: var(--autodoc-shadow-ambient);
+}
+
+.autodoc-card-float {
+  box-shadow: var(--autodoc-shadow-float);
+}
+
+/* ============================================================
+   8. GHOST BORDER — accessibility fallback at 15% opacity
+   ============================================================ */
+
+.autodoc-ghost-border {
+  border: 1px solid rgba(196, 197, 215, 0.15);
+}
+
+/* ============================================================
+   9. TYPOGRAPHY SCALES
+   ============================================================ */
+
+.autodoc-display-lg {
+  font-size: 3.5rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.autodoc-headline-lg {
+  font-size: 2rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.autodoc-headline-md {
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.autodoc-body-md {
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.6;
+}
+
+.autodoc-label-md {
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* ============================================================
+   10. STATUS BADGE PILLS — full radius
+   ============================================================ */
+
+.autodoc-badge {
+  border-radius: 9999px;
+  padding: 0.125rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.autodoc-badge--success {
+  background-color: var(--autodoc-success-bg);
+  color: var(--autodoc-success);
+}
+
+.autodoc-badge--warning {
+  background-color: var(--autodoc-warning-bg);
+  color: var(--autodoc-warning);
+}
+
+.autodoc-badge--error {
+  background-color: var(--autodoc-error-container);
+  color: var(--autodoc-on-error-container);
+}
+
+.autodoc-badge--info {
+  background-color: var(--autodoc-info-bg);
+  color: var(--autodoc-info);
+}
+
+.autodoc-badge--neutral {
+  background-color: var(--autodoc-surface-container-high);
+  color: var(--autodoc-on-surface-variant);
+}
+
+/* ============================================================
+   11. TRANSITIONS — 200ms ease-out for all hover states
+   ============================================================ */
+
+.salt-provider button,
+.salt-provider a,
+.salt-provider [role="button"],
+.salt-provider [class*="saltCard"] {
+  transition: background-color 200ms ease-out, color 200ms ease-out,
+    box-shadow 200ms ease-out, transform 200ms ease-out;
+}
+
+/* ============================================================
+   12. INPUT FIELDS — minimal, bottom-bar focus
+   ============================================================ */
+
+.salt-provider [class*="saltInput"],
+.salt-provider [class*="saltFormField"] {
+  background-color: var(--autodoc-surface-container-high);
+}
+
+/* ============================================================
+   13. SPACING HELPERS
+   ============================================================ */
+
+.autodoc-section-gap {
+  margin-bottom: 1.5rem;
+}
+
+.autodoc-page-padding {
+  padding: 1.5rem 2rem;
+}
