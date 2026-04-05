@@ -15,7 +15,7 @@ import {
   useUpdateSchedule,
   useDeleteRepository,
 } from "@/api/hooks";
-import type { BranchMapping, Schedule } from "@/types";
+import type { Schedule } from "@/types";
 import { formatRelativeTime } from "@/utils/formatters";
 
 // ---------------------------------------------------------------------------
@@ -52,27 +52,18 @@ const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", 
 function GeneralSettings({ repoId }: { repoId: string }): ReactNode {
   const { data: repo, isLoading, isError, error, refetch } = useRepository(repoId);
   const { data: schedule } = useRepoSchedule(repoId);
-  const updateRepo = useUpdateRepository(repoId);
   const updateSchedule = useUpdateSchedule(repoId);
 
-  const [description, setDescription] = useState<string | null>(null);
   const [scheduleEnabled, setScheduleEnabled] = useState<boolean | null>(null);
   const [scheduleMode, setScheduleMode] = useState<Schedule["mode"] | null>(null);
   const [scheduleFrequency, setScheduleFrequency] = useState<Schedule["frequency"] | null>(null);
   const [scheduleDay, setScheduleDay] = useState<number | null>(null);
 
   // Resolve effective values (local state overrides server data)
-  const effectiveDescription = description ?? repo?.description ?? "";
   const effectiveEnabled = scheduleEnabled ?? schedule?.enabled ?? false;
   const effectiveMode = scheduleMode ?? schedule?.mode ?? "full";
   const effectiveFrequency = scheduleFrequency ?? schedule?.frequency ?? "weekly";
   const effectiveDay = scheduleDay ?? schedule?.day_of_week ?? 1;
-
-  const handleSaveDescription = useCallback(() => {
-    if (description != null) {
-      updateRepo.mutate({ description });
-    }
-  }, [description, updateRepo]);
 
   const handleSaveSchedule = useCallback(() => {
     updateSchedule.mutate({
@@ -104,28 +95,6 @@ function GeneralSettings({ repoId }: { repoId: string }): ReactNode {
               <FormFieldLabel>Provider</FormFieldLabel>
               <Input value={repo?.provider ?? "\u2014"} readOnly style={{ textTransform: "capitalize" }} />
             </FormField>
-          </div>
-        </div>
-
-        {/* Description */}
-        <div style={sectionStyle}>
-          <h3 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "1rem" }}>Description</h3>
-          <FormField>
-            <FormFieldLabel>Description</FormFieldLabel>
-            <MultilineInput
-              value={effectiveDescription}
-              textAreaProps={{ onChange: (event) => setDescription(event.target.value) }}
-              rows={3}
-            />
-          </FormField>
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "0.75rem" }}>
-            <Button
-              appearance="solid"
-              onClick={handleSaveDescription}
-              disabled={description == null || updateRepo.isPending}
-            >
-              {updateRepo.isPending ? "Saving..." : "Save"}
-            </Button>
           </div>
         </div>
 
@@ -224,7 +193,10 @@ function GeneralSettings({ repoId }: { repoId: string }): ReactNode {
 // Branch Settings
 // ---------------------------------------------------------------------------
 
-type BranchRow = Record<string, unknown> & BranchMapping;
+interface BranchRow extends Record<string, unknown> {
+  source_branch: string;
+  wiki_branch: string;
+}
 
 function BranchSettings({ repoId }: { repoId: string }): ReactNode {
   const { data: repo, isLoading, isError, error, refetch } = useRepository(repoId);
@@ -234,26 +206,25 @@ function BranchSettings({ repoId }: { repoId: string }): ReactNode {
 
   const branches: BranchRow[] = useMemo(
     () =>
-      (repo?.branches ?? []).map((b) => ({
-        ...b,
-        source_branch: b.source_branch,
-        wiki_branch: b.wiki_branch,
+      Object.entries(repo?.branch_mappings ?? {}).map(([source, wiki]) => ({
+        source_branch: source,
+        wiki_branch: wiki,
       })),
     [repo],
   );
 
   const handleAdd = useCallback(() => {
     if (!newSource.trim() || !newWiki.trim()) return;
-    const updated = [...(repo?.branches ?? []), { source_branch: newSource.trim(), wiki_branch: newWiki.trim() }];
-    updateRepo.mutate({ branches: updated });
+    const updated = { ...(repo?.branch_mappings ?? {}), [newSource.trim()]: newWiki.trim() };
+    updateRepo.mutate({ branch_mappings: updated });
     setNewSource("");
     setNewWiki("");
   }, [newSource, newWiki, repo, updateRepo]);
 
   const handleRemove = useCallback(
     (sourceBranch: string) => {
-      const updated = (repo?.branches ?? []).filter((b) => b.source_branch !== sourceBranch);
-      updateRepo.mutate({ branches: updated });
+      const { [sourceBranch]: _, ...updated } = (repo?.branch_mappings ?? {});
+      updateRepo.mutate({ branch_mappings: updated });
     },
     [repo, updateRepo],
   );

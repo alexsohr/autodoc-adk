@@ -9,7 +9,11 @@ import {
   Input,
   FormField,
   FormFieldLabel,
+  FormFieldHelperText,
+  Dropdown,
+  Option,
 } from "@salt-ds/core";
+import { ApiError } from "@/api/client";
 import {
   StatusBadge,
   FilterBar,
@@ -109,7 +113,7 @@ function RepoCard({ repo, onClick }: RepoCardProps): ReactNode {
         <StatusBadge status={repo.status ?? "pending"} />
       </div>
 
-      {/* Description */}
+      {/* URL */}
       <p
         style={{
           fontSize: "0.875rem",
@@ -123,7 +127,7 @@ function RepoCard({ repo, onClick }: RepoCardProps): ReactNode {
           WebkitBoxOrient: "vertical",
         }}
       >
-        {repo.description || "No description"}
+        {repo.org}/{repo.name}
       </p>
 
       {/* Running variant: progress bar */}
@@ -331,37 +335,155 @@ interface AddRepoDialogProps {
   onClose: () => void;
 }
 
+interface BranchMapping {
+  source: string;
+  wiki: string;
+}
+
+/** Parse a 422 validation error body into a map of field name to error message. */
+function parseFieldErrors(error: unknown): Record<string, string> {
+  const fieldErrors: Record<string, string> = {};
+  if (!(error instanceof ApiError) || error.status !== 422) return fieldErrors;
+  const body = error.detail as { detail?: { loc?: string[]; msg?: string }[] } | null;
+  if (!body?.detail || !Array.isArray(body.detail)) return fieldErrors;
+  for (const entry of body.detail) {
+    if (!entry.loc || !entry.msg) continue;
+    // loc is typically ["body", "field_name"] — use the last segment
+    const fieldName = entry.loc[entry.loc.length - 1];
+    if (fieldName) {
+      fieldErrors[fieldName] = entry.msg;
+    }
+  }
+  return fieldErrors;
+}
+
+/** Auto-detect provider from a repository URL hostname. */
+function detectProvider(repoUrl: string): "github" | "bitbucket" | null {
+  try {
+    const hostname = new URL(repoUrl).hostname.toLowerCase();
+    if (hostname.includes("github.com") || hostname.includes("github")) return "github";
+    if (hostname.includes("bitbucket.org") || hostname.includes("bitbucket")) return "bitbucket";
+  } catch {
+    // invalid URL — ignore
+  }
+  return null;
+}
+
+/** Extract a repo name slug from a URL (last path segment, strip .git). */
+function extractRepoName(repoUrl: string): string {
+  try {
+    const pathname = new URL(repoUrl).pathname;
+    const segments = pathname.split("/").filter(Boolean);
+    const last = segments[segments.length - 1];
+    if (last) return last.replace(/\.git$/, "");
+  } catch {
+    // invalid URL — ignore
+  }
+  return "";
+}
+
 function AddRepoDialog({ open, onClose }: AddRepoDialogProps): ReactNode {
-  const [name, setName] = useState("");
   const [url, setUrl] = useState("");
-  const [provider, setProvider] = useState<Repository["provider"]>("github");
-  const [description, setDescription] = useState("");
-  const [defaultBranch, setDefaultBranch] = useState("main");
+  const [provider, setProvider] = useState<"github" | "bitbucket">("github");
+  const [repoNameSlug, setRepoNameSlug] = useState("");
+  const [branchMappings, setBranchMappings] = useState<BranchMapping[]>([
+    { source: "main", wiki: "main" },
+  ]);
+  const [publicBranch, setPublicBranch] = useState("main");
+  const [accessToken, setAccessToken] = useState("");
 
   const createRepo = useCreateRepository();
 
+  // Derive field-level errors from mutation error (Task 4.4)
+  const fieldErrors = useMemo(
+    () => (createRepo.isError ? parseFieldErrors(createRepo.error) : {}),
+    [createRepo.isError, createRepo.error],
+  );
+
+  // Source branch keys for the public_branch dropdown
+  const sourceBranches = useMemo(
+    () => branchMappings.map((m) => m.source).filter(Boolean),
+    [branchMappings],
+  );
+
+  // URL onChange handler (Task 4.2)
+  const handleUrlChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const newUrl = event.target.value;
+    setUrl(newUrl);
+
+    // Auto-detect provider
+    const detected = detectProvider(newUrl);
+    if (detected) setProvider(detected);
+
+    // Extract repo name slug
+    setRepoNameSlug(extractRepoName(newUrl));
+  }, []);
+
+  // Branch mapping handlers
+  const handleMappingChange = useCallback(
+    (index: number, field: "source" | "wiki", value: string) => {
+      setBranchMappings((prev) => {
+        const updated = [...prev];
+        const current = updated[index];
+        if (current) {
+          updated[index] = { ...current, [field]: value };
+        }
+        return updated;
+      });
+    },
+    [],
+  );
+
+  const addMappingRow = useCallback(() => {
+    setBranchMappings((prev) => [...prev, { source: "", wiki: "" }]);
+  }, []);
+
+  const removeMappingRow = useCallback((index: number) => {
+    setBranchMappings((prev) => {
+      if (prev.length <= 1) return prev; // keep at least one row
+      return prev.filter((_, i) => i !== index);
+    });
+  }, []);
+
+  // Submit handler (Task 4.3)
   const handleSubmit = useCallback(() => {
-    if (!name.trim() || !url.trim()) return;
+    if (!url.trim()) return;
+    // Convert branch mappings array to Record<string, string>
+    const mappingsRecord: Record<string, string> = {};
+    for (const mapping of branchMappings) {
+      const src = mapping.source.trim();
+      const wiki = mapping.wiki.trim();
+      if (src && wiki) {
+        mappingsRecord[src] = wiki;
+      }
+    }
+    if (Object.keys(mappingsRecord).length === 0) return;
+
     createRepo.mutate(
       {
-        name: name.trim(),
         url: url.trim(),
         provider,
-        description: description.trim() || undefined,
-        default_branch: defaultBranch.trim() || "main",
+        branch_mappings: mappingsRecord,
+        public_branch: publicBranch.trim() || "main",
+        ...(accessToken.trim() ? { access_token: accessToken.trim() } : {}),
       },
       {
         onSuccess: () => {
-          setName("");
           setUrl("");
           setProvider("github");
-          setDescription("");
-          setDefaultBranch("main");
+          setRepoNameSlug("");
+          setBranchMappings([{ source: "main", wiki: "main" }]);
+          setPublicBranch("main");
+          setAccessToken("");
           onClose();
         },
       },
     );
-  }, [name, url, provider, description, defaultBranch, createRepo, onClose]);
+  }, [url, provider, branchMappings, publicBranch, accessToken, createRepo, onClose]);
+
+  const hasValidMappings = branchMappings.some(
+    (m) => m.source.trim() && m.wiki.trim(),
+  );
 
   return (
     <Dialog
@@ -376,7 +498,7 @@ function AddRepoDialog({ open, onClose }: AddRepoDialogProps): ReactNode {
         border: "none",
         borderRadius: "16px",
         boxShadow: "var(--autodoc-shadow-float)",
-        maxWidth: "480px",
+        maxWidth: "560px",
         width: "90vw",
       }}
     >
@@ -384,81 +506,188 @@ function AddRepoDialog({ open, onClose }: AddRepoDialogProps): ReactNode {
       <DialogContent>
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
           {/* Repository URL */}
-          <FormField>
+          <FormField validationStatus={fieldErrors["url"] ? "error" : undefined}>
             <FormFieldLabel>Repository URL *</FormFieldLabel>
             <Input
               value={url}
-              inputProps={{ onChange: (event) => setUrl(event.target.value) }}
+              inputProps={{ onChange: handleUrlChange }}
               placeholder="https://github.com/org/repo"
             />
+            {fieldErrors["url"] && (
+              <FormFieldHelperText>{fieldErrors["url"]}</FormFieldHelperText>
+            )}
           </FormField>
 
-          {/* Name */}
-          <FormField>
-            <FormFieldLabel>Name *</FormFieldLabel>
-            <Input
-              value={name}
-              inputProps={{ onChange: (event) => setName(event.target.value) }}
-              placeholder="my-project"
-            />
+          {/* Auto-extracted repo name (read-only label) */}
+          {repoNameSlug && (
+            <div style={{ fontSize: "0.8125rem", color: "var(--autodoc-on-surface-variant)" }}>
+              Repository: <span style={{ fontWeight: 600, color: "var(--autodoc-on-surface)" }}>{repoNameSlug}</span>
+            </div>
+          )}
+
+          {/* Provider (auto-detected, read-only badge) */}
+          <FormField validationStatus={fieldErrors["provider"] ? "error" : undefined}>
+            <FormFieldLabel>Provider</FormFieldLabel>
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                padding: "0.375rem 0.75rem",
+                borderRadius: "8px",
+                background: "var(--autodoc-surface-container)",
+                color: "var(--autodoc-on-surface)",
+                fontSize: "0.875rem",
+                fontWeight: 500,
+                width: "fit-content",
+              }}
+            >
+              {provider === "github" ? "GitHub" : "Bitbucket"}
+              <span style={{ marginLeft: "0.5rem", fontSize: "0.75rem", color: "var(--autodoc-on-surface-variant)" }}>
+                (auto-detected)
+              </span>
+            </div>
+            {fieldErrors["provider"] && (
+              <FormFieldHelperText>{fieldErrors["provider"]}</FormFieldHelperText>
+            )}
           </FormField>
 
-          {/* Provider */}
+          {/* Branch Mappings (key-value editor) */}
           <div>
             <div style={{
-              display: "block",
-              marginBottom: "0.375rem",
-              fontSize: "0.75rem",
-              fontWeight: 500,
-              letterSpacing: "0.05em",
-              textTransform: "uppercase",
-              color: "var(--autodoc-on-surface-variant)",
-            }}>Provider</div>
-            <div style={{ display: "flex", gap: "0.5rem" }}>
-              {(["github", "bitbucket"] as const).map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setProvider(p)}
-                  style={{
-                    flex: 1,
-                    padding: "0.5rem",
-                    borderRadius: "8px",
-                    border: "none",
-                    fontSize: "0.875rem",
-                    fontWeight: 500,
-                    cursor: "pointer",
-                    background: provider === p ? "var(--autodoc-primary)" : "var(--autodoc-surface-container)",
-                    color: provider === p ? "var(--autodoc-on-primary)" : "var(--autodoc-on-surface)",
-                    transition: "background-color 200ms ease-out, color 200ms ease-out",
-                  }}
-                >
-                  {p === "github" ? "GitHub" : "Bitbucket"}
-                </button>
-              ))}
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "0.5rem",
+            }}>
+              <FormFieldLabel style={{ margin: 0 }}>Branch Mappings *</FormFieldLabel>
+              <button
+                type="button"
+                onClick={addMappingRow}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "var(--autodoc-primary)",
+                  cursor: "pointer",
+                  fontSize: "0.8125rem",
+                  fontWeight: 600,
+                  padding: "0.25rem 0.5rem",
+                  borderRadius: "6px",
+                  transition: "background-color 200ms ease-out",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "var(--autodoc-surface-container)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+              >
+                + Add row
+              </button>
             </div>
+            {/* Column headers */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 32px", gap: "0.5rem", marginBottom: "0.375rem" }}>
+              <span style={{ fontSize: "0.6875rem", fontWeight: 500, color: "var(--autodoc-on-surface-variant)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                Source Branch
+              </span>
+              <span style={{ fontSize: "0.6875rem", fontWeight: 500, color: "var(--autodoc-on-surface-variant)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                Wiki Branch
+              </span>
+              <span />
+            </div>
+            {branchMappings.map((mapping, index) => (
+              <div
+                key={index}
+                style={{ display: "grid", gridTemplateColumns: "1fr 1fr 32px", gap: "0.5rem", marginBottom: "0.5rem", alignItems: "center" }}
+              >
+                <Input
+                  value={mapping.source}
+                  inputProps={{
+                    onChange: (e) => handleMappingChange(index, "source", e.target.value),
+                  }}
+                  placeholder="main"
+                />
+                <Input
+                  value={mapping.wiki}
+                  inputProps={{
+                    onChange: (e) => handleMappingChange(index, "wiki", e.target.value),
+                  }}
+                  placeholder="main"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeMappingRow(index)}
+                  disabled={branchMappings.length <= 1}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    cursor: branchMappings.length <= 1 ? "default" : "pointer",
+                    color: branchMappings.length <= 1 ? "var(--autodoc-outline-variant)" : "var(--autodoc-on-surface-variant)",
+                    fontSize: "1rem",
+                    padding: "0.25rem",
+                    borderRadius: "4px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                  title="Remove row"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                    <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  </svg>
+                </button>
+              </div>
+            ))}
+            {fieldErrors["branch_mappings"] && (
+              <div style={{ fontSize: "0.75rem", color: "var(--autodoc-error)", marginTop: "0.25rem" }}>
+                {fieldErrors["branch_mappings"]}
+              </div>
+            )}
           </div>
 
-          {/* Default Branch */}
-          <FormField>
-            <FormFieldLabel>Default Branch</FormFieldLabel>
-            <Input
-              value={defaultBranch}
-              inputProps={{ onChange: (event) => setDefaultBranch(event.target.value) }}
-              placeholder="main"
-            />
+          {/* Public Branch (dropdown from source branches) */}
+          <FormField validationStatus={fieldErrors["public_branch"] ? "error" : undefined}>
+            <FormFieldLabel>Public Branch *</FormFieldLabel>
+            {sourceBranches.length > 0 ? (
+              <Dropdown
+                selected={[publicBranch]}
+                onSelectionChange={(_event, items) => {
+                  const selected = items[0];
+                  if (selected) setPublicBranch(selected);
+                }}
+                style={{ width: "100%" }}
+              >
+                {sourceBranches.map((branch) => (
+                  <Option key={branch} value={branch}>
+                    {branch}
+                  </Option>
+                ))}
+              </Dropdown>
+            ) : (
+              <Input
+                value={publicBranch}
+                inputProps={{ onChange: (e) => setPublicBranch(e.target.value) }}
+                placeholder="main"
+              />
+            )}
+            {fieldErrors["public_branch"] && (
+              <FormFieldHelperText>{fieldErrors["public_branch"]}</FormFieldHelperText>
+            )}
           </FormField>
 
-          {/* Description */}
-          <FormField>
-            <FormFieldLabel>Description</FormFieldLabel>
+          {/* Access Token (optional, password input) */}
+          <FormField validationStatus={fieldErrors["access_token"] ? "error" : undefined}>
+            <FormFieldLabel>Access Token</FormFieldLabel>
             <Input
-              value={description}
-              inputProps={{ onChange: (event) => setDescription(event.target.value) }}
-              placeholder="Optional description..."
+              value={accessToken}
+              inputProps={{
+                onChange: (e) => setAccessToken(e.target.value),
+                type: "password",
+              }}
+              placeholder="Optional — for private repositories"
             />
+            {fieldErrors["access_token"] && (
+              <FormFieldHelperText>{fieldErrors["access_token"]}</FormFieldHelperText>
+            )}
           </FormField>
 
-          {createRepo.isError && (
+          {/* General error display (non-422 or non-field errors) */}
+          {createRepo.isError && Object.keys(fieldErrors).length === 0 && (
             <div
               style={{
                 padding: "0.625rem 0.75rem",
@@ -480,7 +709,7 @@ function AddRepoDialog({ open, onClose }: AddRepoDialogProps): ReactNode {
         <Button
           appearance="solid"
           onClick={handleSubmit}
-          disabled={!name.trim() || !url.trim() || createRepo.isPending}
+          disabled={!url.trim() || !hasValidMappings || createRepo.isPending}
           style={{
             background: "var(--autodoc-gradient-cta)",
             border: "none",
@@ -519,7 +748,7 @@ export default function RepoListPage(): ReactNode {
       filtered = filtered.filter(
         (r) =>
           r.name.toLowerCase().includes(q) ||
-          (r.description?.toLowerCase().includes(q) ?? false),
+          r.url.toLowerCase().includes(q),
       );
     }
     return filtered;

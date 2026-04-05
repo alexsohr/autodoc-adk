@@ -358,7 +358,7 @@ function RepoInfoPanel({ url, defaultBranch, provider, scopeCount, pageCount }: 
             </svg>
           }
           label="Stats"
-          value={`${pageCount} pages, ${scopeCount} scopes`}
+          value={`${pageCount ?? 0} pages, ${scopeCount ?? 0} scopes`}
         />
       </div>
     </div>
@@ -724,8 +724,8 @@ export default function OverviewTab(): ReactNode {
                   url={repo.url}
                   defaultBranch={repo.default_branch}
                   provider={repo.provider}
-                  scopeCount={repo.scope_count}
-                  pageCount={repo.page_count}
+                  scopeCount={repo.scope_count ?? 0}
+                  pageCount={repo.page_count ?? 0}
                 />
               </SectionErrorBoundary>
 

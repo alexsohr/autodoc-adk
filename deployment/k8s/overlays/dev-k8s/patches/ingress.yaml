@@ -1,0 +1,46 @@
+# Dev-k8s ingress — use localhost (accessed via port-forward or local ingress)
+# Disable TLS for local development
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: autodoc-ingress-backends
+  namespace: autodoc
+spec:
+  tls: []
+  rules:
+    - host: localhost
+      http:
+        paths:
+          - path: /api(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: autodoc-api
+                port:
+                  number: 8080
+          - path: /prefect(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: prefect-api
+                port:
+                  number: 4200
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: autodoc-ingress-web
+  namespace: autodoc
+spec:
+  tls: []
+  rules:
+    - host: localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: autodoc-web
+                port:
+                  number: 3000

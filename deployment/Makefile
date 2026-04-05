@@ -1,10 +1,10 @@
-.PHONY: up down clean dev-up dev-down dev-clean migrate api worker deploy-local deploy-flows test test-unit test-integration lint test-e2e test-all test-e2e-clean
+.PHONY: up down clean dev-up dev-down dev-clean migrate api worker deploy-local deploy-flows test test-unit test-integration lint test-e2e test-all test-e2e-clean web-dev web-build web-docker web-storybook web-test
 
 # ── Full Stack ──
 
 up:
 	docker compose up --build -d
-	@echo "Full stack running: API on :8080, Prefect on :4200, PostgreSQL on :5432"
+	@echo "Full stack running: API on :8080, Web on :3000, Prefect on :4200, PostgreSQL on :5432"
 
 down:
 	docker compose down
@@ -75,3 +75,20 @@ test-all:
 
 test-e2e-clean:
 	docker ps -q --filter "label=testcontainers" | xargs -r docker rm -f
+
+# ── Web Frontend ──
+
+web-dev:
+	cd ../web && npm run dev
+
+web-build:
+	cd ../web && npm run build
+
+web-docker:
+	docker build -t autodoc-web -f docker/Dockerfile.web ..
+
+web-storybook:
+	cd ../web && npm run storybook
+
+web-test:
+	cd ../web && npm test

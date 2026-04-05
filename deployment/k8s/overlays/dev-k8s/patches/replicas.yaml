@@ -38,3 +38,11 @@ metadata:
   namespace: autodoc
 spec:
   replicas: 1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: autodoc-web
+  namespace: autodoc
+spec:
+  replicas: 1

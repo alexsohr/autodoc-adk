@@ -7,6 +7,8 @@ resources:
 images:
   - name: autodoc-api
     newTag: COMMIT_SHA_PLACEHOLDER
+  - name: autodoc-web
+    newTag: COMMIT_SHA_PLACEHOLDER
   - name: autodoc-worker
     newTag: COMMIT_SHA_PLACEHOLDER
   - name: autodoc-flow

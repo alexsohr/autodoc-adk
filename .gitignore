@@ -57,3 +57,11 @@ uv.lock
 # Misc
 *.bak
 *.orig
+
+# UI
+node_modules/
+.design-reference/
+.playwright-mcp/
+.superpowers/
+web/test-reports/
+/docs/

@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: autodoc-web
+  namespace: autodoc
+  labels:
+    app.kubernetes.io/part-of: autodoc
+    app.kubernetes.io/component: web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: autodoc
+        app.kubernetes.io/component: web
+    spec:
+      containers:
+        - name: web
+          image: autodoc-web:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: API_UPSTREAM
+              valueFrom:
+                configMapKeyRef:
+                  name: autodoc-config
+                  key: API_UPSTREAM
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
