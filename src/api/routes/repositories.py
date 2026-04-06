@@ -65,8 +65,9 @@ async def _enrich_repository_response(
         pages = await wiki_repo.get_pages_for_structure(structure.id)
         total_pages += len(pages)
         for page in pages:
-            quality_sum += page.quality_score
-            quality_count += 1
+            if page.quality_score is not None:
+                quality_sum += page.quality_score
+                quality_count += 1
 
     avg_quality_score = round(quality_sum / quality_count, 2) if quality_count > 0 else None
 

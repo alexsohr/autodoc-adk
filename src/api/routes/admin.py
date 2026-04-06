@@ -33,6 +33,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
+# Per-token cost estimates (USD per token) — Gemini Flash ballpark.
+# Update these when provider pricing changes.
+_INPUT_TOKEN_COST = 0.15 / 1_000_000   # $0.15 per 1M input tokens
+_OUTPUT_TOKEN_COST = 0.60 / 1_000_000  # $0.60 per 1M output tokens
+
 # Module-level start time for uptime calculation
 _start_time = time.monotonic()
 
@@ -164,59 +169,62 @@ async def admin_usage(
     count_result = await session.execute(count_stmt)
     job_count = count_result.scalar_one()
 
-    # Aggregate token totals from JSONB - simplified placeholder
-    # TODO: implement with real query using jsonb_extract_path / cast for aggregation
-    total_input = 0
-    total_output = 0
-    total = 0
+    # Aggregate token totals in SQL to avoid loading all rows into Python
+    _token_filters = [
+        Job.status == "COMPLETED",
+        Job.token_usage.isnot(None),
+        Job.created_at >= period_start,
+        Job.created_at <= period_end,
+    ]
 
-    jobs_stmt = (
-        sa.select(Job.token_usage, Job.repository_id)
-        .where(
-            Job.status == "COMPLETED",
-            Job.token_usage.isnot(None),
-            Job.created_at >= period_start,
-            Job.created_at <= period_end,
+    totals_stmt = sa.select(
+        sa.func.coalesce(
+            sa.func.sum(sa.cast(Job.token_usage["total_input_tokens"].astext, sa.BigInteger)), 0
+        ).label("total_input"),
+        sa.func.coalesce(
+            sa.func.sum(sa.cast(Job.token_usage["total_output_tokens"].astext, sa.BigInteger)), 0
+        ).label("total_output"),
+        sa.func.coalesce(
+            sa.func.sum(sa.cast(Job.token_usage["total_tokens"].astext, sa.BigInteger)), 0
+        ).label("total"),
+    ).where(*_token_filters)
+
+    totals_result = await session.execute(totals_stmt)
+    totals_row = totals_result.one()
+    total_input = totals_row.total_input
+    total_output = totals_row.total_output
+    total = totals_row.total
+
+    estimated_cost = total_input * _INPUT_TOKEN_COST + total_output * _OUTPUT_TOKEN_COST
+
+    # Top repositories by token usage (aggregated in SQL, limited to top 10)
+    repo_totals_stmt = (
+        sa.select(
+            Job.repository_id,
+            sa.func.sum(sa.cast(Job.token_usage["total_tokens"].astext, sa.BigInteger)).label("repo_tokens"),
         )
-        .limit(1000)
+        .where(*_token_filters)
+        .group_by(Job.repository_id)
+        .order_by(sa.desc("repo_tokens"))
+        .limit(10)
     )
-    jobs_result = await session.execute(jobs_stmt)
-    rows = jobs_result.all()
+    repo_totals_result = await session.execute(repo_totals_stmt)
+    repo_rows = repo_totals_result.all()
 
-    repo_tokens: dict[str, int] = {}
-
-    for row in rows:
-        usage = row.token_usage
-        if not isinstance(usage, dict):
-            continue
-        inp = usage.get("total_input_tokens", 0) or 0
-        out = usage.get("total_output_tokens", 0) or 0
-        tot = usage.get("total_tokens", 0) or 0
-        total_input += inp
-        total_output += out
-        total += tot
-
-        repo_key = str(row.repository_id)
-        repo_tokens[repo_key] = repo_tokens.get(repo_key, 0) + tot
-
-    # Rough cost estimate ($0.15 per 1M input, $0.60 per 1M output - Gemini Flash ballpark)
-    estimated_cost = (total_input * 0.15 + total_output * 0.60) / 1_000_000
-
-    # Build top repos (fetch names)
+    # Batch-fetch repository names to avoid N+1 queries
     top_repo_items: list[TopRepoByTokens] = []
-    if repo_tokens:
-        sorted_repos = sorted(repo_tokens.items(), key=lambda x: x[1], reverse=True)[:10]
-        for repo_id_str, tokens in sorted_repos:
-            try:
-                repo_uuid = uuid.UUID(repo_id_str)
-            except ValueError:
-                continue
-            repo_row = await session.get(Repository, repo_uuid)
+    if repo_rows:
+        repo_ids = [r.repository_id for r in repo_rows]
+        names_stmt = sa.select(Repository.id, Repository.name).where(Repository.id.in_(repo_ids))
+        names_result = await session.execute(names_stmt)
+        name_map: dict[uuid.UUID, str] = {r.id: r.name for r in names_result.all()}
+
+        for r in repo_rows:
             top_repo_items.append(
                 TopRepoByTokens(
-                    repository_id=repo_uuid,
-                    name=repo_row.name if repo_row else "unknown",
-                    total_tokens=tokens,
+                    repository_id=r.repository_id,
+                    name=name_map.get(r.repository_id, "unknown"),
+                    total_tokens=r.repo_tokens or 0,
                 )
             )
 
