@@ -2,7 +2,7 @@
 # docker-compose.yml — Full-stack AutoDoc ADK (production / full local dev)
 # =============================================================================
 # Brings up the complete stack: PostgreSQL (pgvector), Prefect Server,
-# Prefect Worker, and the FastAPI API service.
+# Prefect Worker, FastAPI API service, and Dashboard web frontend.
 #
 # Usage:
 #   cd deployment
@@ -106,7 +106,7 @@ services:
   # The main application API. Connects to both PostgreSQL (for application
   # data) and Prefect Server (for job orchestration).
   # ---------------------------------------------------------------------------
-  api:
+  autodoc-api:
     build:
       context: ..
       dockerfile: deployment/docker/Dockerfile.api
@@ -128,6 +128,29 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # Dashboard Web Frontend
+  # ---------------------------------------------------------------------------
+  # Vite SPA served by nginx. Proxies /api/ requests to autodoc-api.
+  # ---------------------------------------------------------------------------
+  web:
+    build:
+      context: ..
+      dockerfile: deployment/docker/Dockerfile.web
+    environment:
+      API_UPSTREAM: "autodoc-api:8080"
+    ports:
+      - "3000:3000"
+    depends_on:
+      autodoc-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
 
 volumes:
   pgdata:

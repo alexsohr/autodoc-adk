@@ -6,16 +6,79 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Response
 from sqlalchemy.exc import IntegrityError
 
-from src.api.dependencies import get_repository_repo
+from src.api.dependencies import get_job_repo, get_repository_repo, get_wiki_repo
 from src.api.schemas.repositories import (
     PaginatedRepositoryResponse,
     RegisterRepositoryRequest,
     RepositoryResponse,
     UpdateRepositoryRequest,
 )
+from src.database.repos.job_repo import JobRepo
 from src.database.repos.repository_repo import RepositoryRepo
+from src.database.repos.wiki_repo import WikiRepo
 
 router = APIRouter(tags=["repositories"])
+
+_JOB_STATUS_MAP: dict[str, str] = {
+    "RUNNING": "running",
+    "FAILED": "failed",
+    "COMPLETED": "healthy",
+    "PENDING": "running",
+    "CANCELLED": "failed",
+}
+
+
+async def _enrich_repository_response(
+    row: object,
+    job_repo: JobRepo,
+    wiki_repo: WikiRepo,
+) -> RepositoryResponse:
+    """Build a RepositoryResponse with computed fields from jobs and wiki data."""
+    repo_id = row.id
+
+    # Latest job → status + last_generated_at
+    jobs = await job_repo.list(repository_id=repo_id, limit=1)
+    if jobs:
+        latest = jobs[0]
+        status = _JOB_STATUS_MAP.get(latest.status, "pending")
+        last_generated_at = latest.updated_at if latest.status == "COMPLETED" else None
+    else:
+        status = "pending"
+        last_generated_at = None
+
+    # Scope/page counts from wiki structures
+    structures = await wiki_repo.get_structures_for_repo(
+        repository_id=repo_id,
+        branch=row.public_branch,
+    )
+    # De-duplicate by scope_path (keep latest)
+    latest_by_scope: dict[str, object] = {}
+    for s in structures:
+        latest_by_scope[s.scope_path] = s
+
+    scope_count = len(latest_by_scope)
+    total_pages = 0
+    quality_sum = 0.0
+    quality_count = 0
+
+    for structure in latest_by_scope.values():
+        pages = await wiki_repo.get_pages_for_structure(structure.id)
+        total_pages += len(pages)
+        for page in pages:
+            if page.quality_score is not None:
+                quality_sum += page.quality_score
+                quality_count += 1
+
+    avg_quality_score = round(quality_sum / quality_count, 2) if quality_count > 0 else None
+
+    resp = RepositoryResponse.model_validate(row)
+    resp.default_branch = row.public_branch
+    resp.status = status
+    resp.page_count = total_pages
+    resp.scope_count = scope_count
+    resp.avg_quality_score = avg_quality_score
+    resp.last_generated_at = last_generated_at
+    return resp
 
 _PROVIDER_HOSTS = {
     "github": "github.com",
@@ -104,6 +167,8 @@ async def register_repository(
         },
     ),
     repo: RepositoryRepo = Depends(get_repository_repo),
+    job_repo: JobRepo = Depends(get_job_repo),
+    wiki_repo: WikiRepo = Depends(get_wiki_repo),
 ) -> RepositoryResponse:
     org, name = _parse_org_name(body.url, body.provider)
     try:
@@ -120,7 +185,7 @@ async def register_repository(
         raise HTTPException(
             status_code=409, detail="Repository URL already registered"
         ) from exc
-    return RepositoryResponse.model_validate(row)
+    return await _enrich_repository_response(row, job_repo, wiki_repo)
 
 
 @router.get(
@@ -165,11 +230,14 @@ async def list_repositories(
         },
     ),
     repo: RepositoryRepo = Depends(get_repository_repo),
+    job_repo: JobRepo = Depends(get_job_repo),
+    wiki_repo: WikiRepo = Depends(get_wiki_repo),
 ) -> PaginatedRepositoryResponse:
     rows = await repo.list(cursor=cursor, limit=limit)
     next_cursor = str(rows[-1].id) if len(rows) == limit else None
+    items = [await _enrich_repository_response(r, job_repo, wiki_repo) for r in rows]
     return PaginatedRepositoryResponse(
-        items=[RepositoryResponse.model_validate(r) for r in rows],
+        items=items,
         next_cursor=next_cursor,
         limit=limit,
     )
@@ -202,11 +270,13 @@ async def get_repository(
         },
     ),
     repo: RepositoryRepo = Depends(get_repository_repo),
+    job_repo: JobRepo = Depends(get_job_repo),
+    wiki_repo: WikiRepo = Depends(get_wiki_repo),
 ) -> RepositoryResponse:
     row = await repo.get_by_id(repository_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Repository not found")
-    return RepositoryResponse.model_validate(row)
+    return await _enrich_repository_response(row, job_repo, wiki_repo)
 
 
 @router.patch(
@@ -271,6 +341,8 @@ async def update_repository(
         },
     ),
     repo: RepositoryRepo = Depends(get_repository_repo),
+    job_repo: JobRepo = Depends(get_job_repo),
+    wiki_repo: WikiRepo = Depends(get_wiki_repo),
 ) -> RepositoryResponse:
     updates = body.model_dump(exclude_unset=True)
     if not updates:
@@ -295,7 +367,7 @@ async def update_repository(
     row = await repo.update(repository_id, **updates)
     if row is None:
         raise HTTPException(status_code=404, detail="Repository not found")
-    return RepositoryResponse.model_validate(row)
+    return await _enrich_repository_response(row, job_repo, wiki_repo)
 
 
 @router.delete(

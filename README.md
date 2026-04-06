@@ -2,12 +2,13 @@
 
 AI-powered documentation generator that analyzes codebases and produces wiki-style documentation with quality-gated agents, semantic search, and automated pull requests.
 
-Built with [Google ADK](https://github.com/google/adk-python), [Prefect 3](https://www.prefect.io/), [FastAPI](https://fastapi.tiangolo.com/), and [PostgreSQL/pgvector](https://github.com/pgvector/pgvector).
+Built with [Google ADK](https://github.com/google/adk-python), [Prefect 3](https://www.prefect.io/), [FastAPI](https://fastapi.tiangolo.com/), [PostgreSQL/pgvector](https://github.com/pgvector/pgvector), and a [React](https://react.dev/) + [Salt Design System](https://saltdesignsystem.com/) dashboard.
 
 ## Table of Contents
 
 - [How It Works](#how-it-works)
 - [Features](#features)
+- [Dashboard](#dashboard)
 - [Getting Started](#getting-started)
   - [Prerequisites](#prerequisites)
   - [Development Setup](#development-setup)
@@ -91,9 +92,19 @@ After initial generation, subsequent runs auto-detect changes via the provider's
 - Job idempotency: duplicate requests return the existing active job
 - 1-hour hard timeout per job
 
+**Dashboard**
+- Web-based dashboard for browsing repositories, documentation, jobs, and quality metrics
+- Repository overview with scope breakdown, quality scores, and activity timeline
+- Documentation browser with tree navigation, markdown rendering, and mermaid diagrams
+- Hybrid/semantic/text search with relevance scoring and snippet highlighting
+- Job management with real-time pipeline visualization and progress polling
+- Quality drill-down with per-page critic feedback and agent score trends
+- Admin pages for system health, usage/cost tracking, and MCP server monitoring
+- Role-based access control (Viewer, Developer, Admin)
+
 **Operations**
-- Prefect UI as primary operations dashboard
-- REST API for programmatic access (15 endpoints)
+- Web dashboard and Prefect UI for operations visibility
+- REST API for programmatic access (35 endpoints)
 - OpenTelemetry tracing with structured JSON logging (trace_id, span_id, job_id correlation)
 - Stale job reconciliation on startup
 - Scheduled cleanup of orphaned workspaces (every 15 minutes)
@@ -104,6 +115,33 @@ After initial generation, subsequent runs auto-detect changes via the provider's
 - Per-agent model overrides (Generator and Critic can use different models)
 - Webhook-driven updates from GitHub/Bitbucket push events
 
+## Dashboard
+
+AutoDoc includes a web dashboard for managing repositories, browsing documentation, monitoring jobs, and reviewing quality metrics. Built with React 19, TypeScript, Salt Design System (J.P. Morgan), and TanStack Query.
+
+**Key pages:**
+
+| Page | URL | Description |
+|------|-----|-------------|
+| Repository List | `/` | Card grid of all repositories with status, quality scores, and filtering |
+| Repo Overview | `/repos/:id` | Metrics, latest job pipeline, scope breakdown, activity timeline |
+| Docs Browser | `/repos/:id/docs` | Tree navigation, markdown rendering with mermaid/syntax highlighting |
+| Search | `/repos/:id/search` | Hybrid/semantic/text search with relevance scoring |
+| Jobs | `/repos/:id/jobs` | Job history, real-time pipeline visualization, log viewer |
+| Quality | `/repos/:id/quality` | Agent scores, per-page critic feedback, token usage breakdown |
+| Settings | `/repos/:id/settings` | Repository config, branches, webhooks, schedule, danger zone |
+| System Health | `/admin/health` | API/Prefect/DB/worker status with capacity metrics |
+| Usage & Costs | `/admin/usage` | Token totals, cost estimates, top repos by usage |
+| MCP Servers | `/admin/mcp` | MCP endpoint status, agent integration guide |
+
+**Quick start:**
+
+```bash
+cd web && npm install && npm run dev
+```
+
+The dashboard runs at http://localhost:5173 and proxies API requests to http://localhost:8080.
+
 ## Getting Started
 
 ### Prerequisites
@@ -112,7 +150,7 @@ After initial generation, subsequent runs auto-detect changes via the provider's
 - [uv](https://docs.astral.sh/uv/) (package manager)
 - Docker and Docker Compose
 - Git
-- Node.js 18+ (required for the filesystem MCP server used by agents)
+- Node.js 20+ (required for the dashboard and the filesystem MCP server used by agents)
 
 ### Development Setup
 
@@ -153,7 +191,15 @@ cd deployment && make api
 
 The API starts at http://localhost:8080 with hot reload enabled.
 
-**Step 6: Verify**
+**Step 6: Start the dashboard (optional)**
+
+```bash
+cd web && npm install && npm run dev
+```
+
+The dashboard starts at http://localhost:5173.
+
+**Step 7: Verify**
 
 ```bash
 # Health check — database and prefect should be "healthy"
@@ -161,11 +207,14 @@ curl http://localhost:8080/health
 
 # Open Swagger UI
 open http://localhost:8080/docs
+
+# Open dashboard
+open http://localhost:5173
 ```
 
-**Step 7 (optional): Enable job execution**
+**Step 8 (optional): Enable job execution**
 
-Steps 1–6 give you the API, database, and Swagger UI. To actually run documentation generation jobs, you also need the Prefect worker:
+Steps 1–7 give you the API, database, Swagger UI, and dashboard. To actually run documentation generation jobs, you also need the Prefect worker:
 
 ```bash
 # Deploy flows to Prefect (one-time setup)
@@ -213,6 +262,7 @@ This starts all services together:
 | Prefect Server | 4200 | Flow orchestration UI and API |
 | Prefect Worker | -- | Polls for and executes flow runs |
 | FastAPI | 8080 | REST API |
+| Dashboard | 3000 | Web dashboard (nginx + React SPA) |
 
 All services have health checks and dependency ordering -- the API and worker wait for PostgreSQL, Redis, and Prefect Server to be ready before starting.
 
@@ -256,6 +306,7 @@ See [`deployment/k8s/README.md`](deployment/k8s/README.md) for the full step-by-
 | `autodoc-api` | `Dockerfile.api` | Serves REST API |
 | `autodoc-worker` | `Dockerfile.worker` | Polls Prefect Server, launches flow runners (includes `prefect-kubernetes`) |
 | `autodoc-flow` | `Dockerfile.flow` | Executes documentation generation (all AI libs + Node.js + MCP server baked in) |
+| `autodoc-web` | `Dockerfile.web` | Dashboard (nginx serving React SPA, reverse proxies `/api` to API) |
 
 **Secrets:** K8s Secret manifests in git use `CHANGE_ME` placeholders. Real API keys are loaded from `.env` (gitignored) via `./deployment/k8s/scripts/apply-secrets.sh`, which creates the K8s secret without committing values to source control.
 
@@ -448,6 +499,27 @@ pull_request:
 
 All document endpoints accept `?branch=` and `?scope=` query parameters.
 
+### Dashboard
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/auth/me` | Current user (from SSO proxy headers) |
+| GET | `/repositories/{id}/overview` | Aggregated repo overview (pages, quality, scopes, activity) |
+| GET | `/repositories/{id}/quality` | Agent scores, page quality, token breakdown |
+| GET | `/repositories/{id}/quality/pages/{page_key}` | Per-page critic feedback and attempt history |
+| GET | `/jobs/{id}/progress` | Pipeline stages and per-scope progress |
+| GET | `/repositories/{id}/schedule` | Auto-generation schedule |
+| PATCH | `/repositories/{id}/schedule` | Update schedule |
+| POST | `/repositories/{id}/config` | Push config change as PR |
+
+### Admin
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/admin/health` | System health (API, Prefect, DB, workers) |
+| GET | `/admin/usage` | Token usage, costs, top repos |
+| GET | `/admin/mcp` | MCP server status and usage stats |
+
 ### Other
 
 | Method | Endpoint | Description |
@@ -489,6 +561,25 @@ AutoDoc exposes an MCP server for external AI agents using [FastMCP](https://git
 ### Project Structure
 
 ```
+web/                                # Dashboard (React + Salt DS + TypeScript)
+├── src/
+│   ├── main.tsx                    # Entry (SaltProvider + QueryClient + Router)
+│   ├── router.tsx                  # React Router v7 with lazy-loaded pages
+│   ├── theme/autodoc-theme.css     # Custom Salt DS theme from Stitch design tokens
+│   ├── api/                        # API client + TanStack Query hooks
+│   ├── components/
+│   │   ├── layout/                 # AppLayout, TopBar, Sidebar, ContextSearch
+│   │   └── shared/                 # StatusBadge, MetricCard, DataTable, etc.
+│   ├── contexts/                   # AuthContext with role-based access
+│   ├── hooks/                      # useLocalStorage, usePinnedRepos, useSidebarState
+│   ├── pages/                      # RepoListPage, RepoWorkspace, JobDetailPage
+│   │   ├── tabs/                   # Overview, Docs, Search, Chat, Jobs, Quality, Settings
+│   │   └── admin/                  # SystemHealth, AllJobs, UsageCosts, McpServers
+│   ├── types/                      # TypeScript interfaces (Repository, Job, Wiki, etc.)
+│   └── utils/                      # Formatting utilities
+├── .storybook/                     # Storybook config
+└── package.json
+
 src/
 ├── main.py                     # Entry point (telemetry → FastAPI)
 ├── errors.py                   # TransientError, PermanentError, QualityError
@@ -502,7 +593,7 @@ src/
 │   └── readme_distiller/       # README distillation agent
 ├── api/
 │   ├── app.py                  # FastAPI app factory + lifespan
-│   ├── routes/                 # repositories, jobs, documents, webhooks, health
+│   ├── routes/                 # repositories, jobs, documents, webhooks, health, auth, admin, dashboard
 │   └── schemas/                # Pydantic request/response models
 ├── database/
 │   ├── engine.py               # Async SQLAlchemy engine + session factory
@@ -664,6 +755,11 @@ Run from the `deployment/` directory:
 | `make deploy-flows` | Deploy all Prefect flows |
 | `make test` | Run test suite |
 | `make lint` | Run ruff linter |
+| `make web-dev` | Start dashboard dev server (port 5173, hot reload) |
+| `make web-build` | Production build of dashboard |
+| `make web-test` | Run dashboard tests (Vitest) |
+| `make web-storybook` | Start Storybook component explorer |
+| `make web-docker` | Build dashboard Docker image |
 
 ### Code Quality
 
@@ -709,12 +805,15 @@ Test categories:
 |----------|----------|----------------|
 | Unit | `tests/unit/` | Chunking, config loader, errors, schemas, model factory, callbacks, webhooks, search, MCP server |
 | Integration | `tests/integration/` | Agent execution, Prefect flows (via `prefect_test_harness`), API endpoints, end-to-end workflows |
+| E2E | `tests/e2e/` | 86 deterministic scenarios with LLM/provider stubs (no external services needed) |
 | Contract | `tests/contract/` | API responses validated against OpenAPI specification |
+| Frontend | `web/src/__tests__/` | Vitest + Testing Library for formatters and components |
 
 ## Tech Stack
 
 | Component | Technology |
 |-----------|------------|
+| Dashboard | [React 19](https://react.dev/) + TypeScript, [Salt Design System](https://saltdesignsystem.com/), [TanStack Query](https://tanstack.com/query), React Router v7 |
 | AI Agents | [Google ADK](https://github.com/google/adk-python) (LlmAgent, LoopAgent, DatabaseSessionService) |
 | LLM Providers | Gemini (native), Vertex AI, Azure OpenAI, AWS Bedrock via [LiteLLM](https://github.com/BerriAI/litellm) |
 | Orchestration | [Prefect 3](https://www.prefect.io/) (flows, tasks, work pools, deployments) |
@@ -729,7 +828,7 @@ Test categories:
 | Linting | [Ruff](https://docs.astral.sh/ruff/) |
 | Caching/Messaging | Redis 7 (required by Prefect 3) |
 | Testing | pytest + pytest-asyncio, prefect_test_harness |
-| Containers | Docker (3 images: API, Worker, Flow Runner) |
+| Containers | Docker (4 images: API, Worker, Flow Runner, Web Dashboard) |
 | Orchestration Infra | Kubernetes 1.23+ with Kustomize overlays (dev-k8s, prod) |
 
 ## License

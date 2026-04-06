@@ -1,0 +1,66 @@
+/* ContextSearch — glass floating search bar */
+
+.context-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  border-radius: 9999px;
+  padding: 0.375rem 0.75rem;
+
+  /* Glass: uses --autodoc-glass-bg and --autodoc-glass-blur tokens */
+  background-color: var(--autodoc-glass-bg);
+  backdrop-filter: blur(var(--autodoc-glass-blur));
+  -webkit-backdrop-filter: blur(var(--autodoc-glass-blur));
+
+  transition: transform 200ms ease-out, box-shadow 200ms ease-out;
+}
+
+.context-search--focused {
+  transform: scale(1.02);
+  box-shadow: 0 0 0 2px var(--autodoc-primary);
+}
+
+.context-search__icon {
+  flex-shrink: 0;
+  color: var(--autodoc-on-surface-variant);
+  margin-right: 0.5rem;
+}
+
+.context-search__input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 0.875rem;
+  color: var(--autodoc-on-surface);
+  font-family: inherit;
+}
+
+.context-search__input::placeholder {
+  color: var(--autodoc-on-surface-variant);
+}
+
+.context-search__shortcut {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-left: 0.5rem;
+}
+
+.context-search__shortcut-key {
+  font-size: 0.625rem;
+  font-weight: 500;
+  color: var(--autodoc-on-surface-variant);
+  background-color: var(--autodoc-surface-container-high);
+  padding: 0.125rem 0.375rem;
+  border-radius: 4px;
+  font-family: inherit;
+}
+
+/* Spinner keyframe for search loading indicator */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

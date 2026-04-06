@@ -7,6 +7,8 @@ resources:
 images:
   - name: autodoc-api
     newTag: latest
+  - name: autodoc-web
+    newTag: latest
   - name: autodoc-worker
     newTag: latest
   - name: autodoc-flow
@@ -18,3 +20,4 @@ patches:
   - path: patches/secrets.yaml
   - path: patches/resource-quota.yaml
   - path: patches/prefect-api.yaml
+  - path: patches/ingress.yaml

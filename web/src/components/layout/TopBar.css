@@ -1,0 +1,77 @@
+/* TopBar — glassmorphism fixed header */
+
+.topbar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 50;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.5rem;
+  gap: 1rem;
+
+  /* Glassmorphism */
+  background-color: var(--autodoc-glass-bg);
+  backdrop-filter: blur(var(--autodoc-glass-blur));
+  -webkit-backdrop-filter: blur(var(--autodoc-glass-blur));
+
+  transition: left 200ms ease-out;
+}
+
+.topbar__logo {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--autodoc-on-surface);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.topbar__logo:hover {
+  color: var(--autodoc-primary);
+}
+
+.topbar__center {
+  flex: 1;
+  max-width: 480px;
+  margin: 0 1rem;
+}
+
+.topbar__right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.topbar__icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 9999px;
+  border: none;
+  background: transparent;
+  color: var(--autodoc-on-surface-variant);
+  cursor: pointer;
+  transition: background-color 200ms ease-out;
+}
+
+.topbar__icon-btn:hover {
+  background-color: var(--autodoc-surface-container-high);
+}
+
+.topbar__user {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--autodoc-on-surface-variant);
+}
+
+.topbar__role {
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: capitalize;
+  color: var(--autodoc-on-surface-variant);
+}

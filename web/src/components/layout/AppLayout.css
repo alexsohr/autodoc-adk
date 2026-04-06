@@ -1,0 +1,15 @@
+/* AppLayout — three-zone shell: topbar, sidebar, content */
+
+.app-layout {
+  display: flex;
+  min-height: 100vh;
+  background-color: var(--autodoc-surface);
+}
+
+.app-layout__content {
+  flex: 1;
+  margin-top: 56px; /* topbar height */
+  min-height: calc(100vh - 56px);
+  overflow-y: auto;
+  transition: margin-left 200ms ease-out;
+}

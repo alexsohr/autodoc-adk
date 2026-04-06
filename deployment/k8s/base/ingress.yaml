@@ -1,7 +1,59 @@
+# ---------------------------------------------------------------------------
+# Path-based routing on a single hostname.
+#
+# Routes:
+#   https://<hostname>/          → autodoc-web:3000   (dashboard)
+#   https://<hostname>/api/*     → autodoc-api:8080   (strips /api prefix)
+#   https://<hostname>/prefect/* → prefect-api:4200   (strips /prefect prefix)
+#
+# The hostname (autodoc.example.com) is a placeholder — override it per
+# environment via Kustomize overlay patches.
+# ---------------------------------------------------------------------------
+
+# Ingress 1: API and Prefect backends (with path prefix stripping)
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: autodoc-ingress
+  name: autodoc-ingress-backends
+  namespace: autodoc
+  labels:
+    app.kubernetes.io/part-of: autodoc
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - autodoc.example.com
+      secretName: autodoc-tls
+  rules:
+    - host: autodoc.example.com
+      http:
+        paths:
+          # /api/repositories → /repositories
+          - path: /api(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: autodoc-api
+                port:
+                  number: 8080
+          # /prefect/api/health → /api/health
+          - path: /prefect(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: prefect-api
+                port:
+                  number: 4200
+---
+# Ingress 2: Web dashboard (no rewriting — serves SPA at /)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: autodoc-ingress-web
   namespace: autodoc
   labels:
     app.kubernetes.io/part-of: autodoc
@@ -11,27 +63,16 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - api.autodoc.example.com
-        - prefect.autodoc.example.com
+        - autodoc.example.com
       secretName: autodoc-tls
   rules:
-    - host: api.autodoc.example.com
+    - host: autodoc.example.com
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: autodoc-api
+                name: autodoc-web
                 port:
-                  number: 8080
-    - host: prefect.autodoc.example.com
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: prefect-api
-                port:
-                  number: 4200
+                  number: 3000

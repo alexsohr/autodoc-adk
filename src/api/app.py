@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from src.database.engine import dispose_engine
@@ -23,6 +25,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await session.commit()
     except Exception:
         import logging
+
         logging.getLogger(__name__).exception("Failed to reconcile stale jobs on startup")
 
     yield
@@ -39,22 +42,26 @@ def create_app() -> FastAPI:
 
     # Exception handlers
     @app.exception_handler(TransientError)
-    async def transient_error_handler(
-        request: Request, exc: TransientError
-    ) -> JSONResponse:
+    async def transient_error_handler(request: Request, exc: TransientError) -> JSONResponse:
         return JSONResponse(status_code=503, content={"detail": str(exc)})
 
     @app.exception_handler(PermanentError)
-    async def permanent_error_handler(
-        request: Request, exc: PermanentError
-    ) -> JSONResponse:
+    async def permanent_error_handler(request: Request, exc: PermanentError) -> JSONResponse:
         return JSONResponse(status_code=400, content={"detail": str(exc)})
 
     @app.exception_handler(QualityError)
-    async def quality_error_handler(
-        request: Request, exc: QualityError
-    ) -> JSONResponse:
+    async def quality_error_handler(request: Request, exc: QualityError) -> JSONResponse:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+    # Task 9.12: CORS middleware for development mode
+    if os.getenv("AUTODOC_ENV", "development") == "development":
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["http://localhost:5173"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
     # Routers (added as they are implemented)
     from src.api.routes.health import router as health_router
@@ -69,5 +76,14 @@ def create_app() -> FastAPI:
 
     app.include_router(documents_router)
     app.include_router(webhooks_router)
+
+    # Dashboard UI routes (Tasks 9.1-9.11)
+    from src.api.routes.admin import router as admin_router
+    from src.api.routes.auth import router as auth_router
+    from src.api.routes.dashboard import router as dashboard_router
+
+    app.include_router(auth_router)
+    app.include_router(dashboard_router)
+    app.include_router(admin_router)
 
     return app
