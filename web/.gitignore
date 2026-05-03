@@ -1,0 +1,4 @@
+tests/e2e/.seed-data.json
+playwright-report/
+test-results/
+.playwright/
