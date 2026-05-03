@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     # Application
     APP_COMMIT_SHA: str = ""
 
+    # E2E test mode (enables _e2e/reset endpoint, header-driven role identity)
+    AUTODOC_E2E: bool = False
+
     # Default LLM Model
     DEFAULT_MODEL: str = "gemini-2.5-flash"
 
