@@ -86,4 +86,9 @@ def create_app() -> FastAPI:
     app.include_router(dashboard_router)
     app.include_router(admin_router)
 
+    from src.config.settings import get_settings as _get_settings
+    if _get_settings().AUTODOC_E2E:
+        from src.api.routes._e2e import router as e2e_router
+        app.include_router(e2e_router)
+
     return app
