@@ -127,6 +127,12 @@ cd deployment && make web-dev
 cd deployment && make web-build
 cd deployment && make web-test
 cd deployment && make web-storybook
+
+# E2E (Playwright UI tests, run from web/)
+cd web && npm run test:e2e             # headless chromium
+cd web && npm run test:e2e:ui          # Playwright UI mode
+cd web && npm run test:e2e:headed      # headed
+# Backend must be running with AUTODOC_E2E=1; see web/tests/e2e/README.md
 ```
 
 ## Code Style
