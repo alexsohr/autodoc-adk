@@ -195,7 +195,7 @@ async def admin_usage(
     total_output = totals_row.total_output
     total = totals_row.total
 
-    estimated_cost = total_input * _INPUT_TOKEN_COST + total_output * _OUTPUT_TOKEN_COST
+    estimated_cost = float(total_input) * _INPUT_TOKEN_COST + float(total_output) * _OUTPUT_TOKEN_COST
 
     # Top repositories by token usage (aggregated in SQL, limited to top 10)
     repo_totals_stmt = (
