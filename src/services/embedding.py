@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import logging
+import math
 
 import litellm
 
@@ -8,6 +10,25 @@ from src.config.settings import get_settings
 from src.errors import TransientError
 
 logger = logging.getLogger(__name__)
+
+_STUB_EMBEDDING_MODEL = "stub"
+
+
+def _stub_embed(texts: list[str], dim: int) -> list[list[float]]:
+    """Deterministic offline embedding for E2E and Playwright suites.
+
+    Mirrors the algorithm in ``tests/e2e/stubs.py::make_embedding_stub`` —
+    SHA-256 of each input is unrolled into a unit vector of length ``dim``.
+    Activated by setting ``EMBEDDING_MODEL=stub``.
+    """
+    out: list[list[float]] = []
+    for text in texts:
+        digest = hashlib.sha256(text.encode()).digest()
+        seed_len = len(digest)  # 32
+        raw = [(digest[i % seed_len] / 127.5) - 1.0 for i in range(dim)]
+        magnitude = math.sqrt(sum(v * v for v in raw))
+        out.append([v / magnitude for v in raw] if magnitude > 0 else raw)
+    return out
 
 
 async def generate_embeddings(
@@ -46,6 +67,9 @@ async def generate_embeddings(
     model = model or settings.EMBEDDING_MODEL
     dimensions = dimensions or settings.EMBEDDING_DIMENSIONS
     batch_size = batch_size or settings.EMBEDDING_BATCH_SIZE
+
+    if model == _STUB_EMBEDDING_MODEL:
+        return _stub_embed(texts, dimensions)
 
     embeddings: list[list[float]] = []
     total_batches = (len(texts) + batch_size - 1) // batch_size

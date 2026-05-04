@@ -23,3 +23,4 @@ class Repository(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     branch_mappings: Mapped[dict] = mapped_column(JSONB, nullable=False)
     public_branch: Mapped[str] = mapped_column(String, nullable=False)
     access_token: Mapped[str | None] = mapped_column(String, nullable=True)
+    seed_tag: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
