@@ -20,6 +20,7 @@ export function FilterBar({ options, value, onChange }: FilterBarProps): ReactNo
         return (
           <button
             key={option.value}
+            data-testid={`filter-tab-${option.value}`}
             onClick={() => onChange(option.value)}
             style={{
               padding: "0.375rem 0.875rem",

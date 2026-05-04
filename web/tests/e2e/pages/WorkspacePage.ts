@@ -19,14 +19,15 @@ export class WorkspacePage {
     await this.breadcrumb.waitFor();
   }
 
-  readonly breadcrumb:       Locator = this.page.getByRole('navigation', { name: /breadcrumb/i });
-  readonly runFullGenButton: Locator = this.page.getByRole('button', { name: /Run Full Generation/i });
+  readonly breadcrumb:       Locator = this.page.getByTestId('repo-breadcrumb');
+  readonly runFullGenButton: Locator = this.page.getByTestId('workspace-run-full-generation');
 
   metricCard(name: MetricCardName): Locator {
-    return this.page.getByRole('article').filter({ hasText: name });
+    const slug = name.toLowerCase().replace(/\s+/g, '-');
+    return this.page.getByTestId(`overview-metric-card-${slug}`);
   }
 
   tab(name: TabName): Locator {
-    return this.page.getByRole('tab', { name: new RegExp(`^${name}\\b`) });
+    return this.page.getByTestId(`workspace-tab-${name.toLowerCase().replace(/\s+/g, '-')}`);
   }
 }

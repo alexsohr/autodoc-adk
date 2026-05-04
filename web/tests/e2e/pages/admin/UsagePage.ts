@@ -18,6 +18,7 @@ export class UsagePage {
   }
 
   metricCard(name: MetricCard): Locator {
-    return this.page.getByRole('article').filter({ hasText: name });
+    const slug = name.toLowerCase().replace(/\s+/g, '-');
+    return this.page.getByTestId(`usage-metric-card-${slug}`);
   }
 }

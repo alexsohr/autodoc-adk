@@ -11,9 +11,10 @@ export class HealthPage {
   }
 
   readonly heading:        Locator = this.page.getByRole('heading', { name: /Infrastructure Snapshot/i });
-  readonly workPoolsTable: Locator = this.page.getByRole('table', { name: /Work Pools/i });
+  readonly workPoolsTable: Locator = this.page.getByTestId('work-pools-table');
 
   serviceCard(name: ServiceCardName): Locator {
-    return this.page.getByRole('article').filter({ hasText: name });
+    const slug = name.toLowerCase().replace(/\s+/g, '-');
+    return this.page.getByTestId(`health-service-card-${slug}`);
   }
 }

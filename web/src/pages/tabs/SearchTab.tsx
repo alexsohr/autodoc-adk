@@ -223,6 +223,7 @@ export default function SearchTab(): ReactNode {
       >
         <input
           type="text"
+          data-testid="search-tab-input"
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           placeholder="Search documentation..."
@@ -241,6 +242,7 @@ export default function SearchTab(): ReactNode {
         />
         <button
           type="submit"
+          data-testid="search-tab-submit"
           disabled={!inputValue.trim()}
           style={{
             padding: "0.75rem 1.5rem",

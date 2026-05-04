@@ -670,18 +670,21 @@ export default function OverviewTab(): ReactNode {
           <SectionErrorBoundary isLoading={false} isError={false} data={overview}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1.5rem" }}>
               <MetricCard
+                testid="overview-metric-card-doc-pages"
                 label="Doc Pages"
                 value={overview.page_count.toLocaleString()}
                 delta={overview.page_count > 0 ? "+2" : undefined}
                 icon="description"
               />
               <MetricCard
+                testid="overview-metric-card-avg-quality"
                 label="Avg Quality"
                 value={overview.avg_quality_score != null ? `${formatScore(overview.avg_quality_score)}/10` : "\u2014"}
                 subtitle={overview.avg_quality_score != null && overview.avg_quality_score >= 8.0 ? "Excellent" : undefined}
                 icon="high_quality"
               />
               <MetricCard
+                testid="overview-metric-card-scopes"
                 label="Scopes"
                 value={overview.scope_summaries?.length ?? 0}
                 subtitle={
@@ -692,6 +695,7 @@ export default function OverviewTab(): ReactNode {
                 icon="layers"
               />
               <MetricCard
+                testid="overview-metric-card-last-generated"
                 label="Last Generated"
                 value={repo.last_generated_at ? formatRelativeTime(repo.last_generated_at) : "\u2014"}
                 subtitle={overview.last_job ? `${overview.last_job.mode} run` : undefined}

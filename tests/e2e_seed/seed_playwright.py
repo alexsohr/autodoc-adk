@@ -149,14 +149,17 @@ async def seed_playwright(manifest_path: Path | None = None) -> dict[str, Any]:
         digital_clock_id = repo_ids_by_slug["digitalClock"]
         completed_job_id = str(uuid.uuid4())
 
-        async def _insert_job(job_id: str, status: str) -> None:
+        async def _insert_job(
+            job_id: str, status: str, token_usage: str | None = None
+        ) -> None:
             await session.execute(
                 text(
                     """
                     INSERT INTO jobs
-                        (id, repository_id, status, mode, branch)
+                        (id, repository_id, status, mode, branch, token_usage)
                     VALUES
-                        (:id, :repo_id, :status, :mode, :branch)
+                        (:id, :repo_id, :status, :mode, :branch,
+                         CAST(:token_usage AS jsonb))
                     """
                 ),
                 {
@@ -165,10 +168,24 @@ async def seed_playwright(manifest_path: Path | None = None) -> dict[str, Any]:
                     "status": status,
                     "mode": "full",
                     "branch": "main",
+                    "token_usage": token_usage,
                 },
             )
 
-        await _insert_job(completed_job_id, "COMPLETED")
+        # The single COMPLETED job carries token_usage so the admin Usage page
+        # exercises non-zero totals (cost, top-repos, total tokens). Other jobs
+        # leave token_usage NULL so they don't pad the aggregates. Token counts
+        # are sized so the rendered estimated cost rounds to a non-$0.00 value
+        # given the route's rates ($0.15/M input, $0.60/M output).
+        await _insert_job(
+            completed_job_id,
+            "COMPLETED",
+            token_usage=(
+                '{"total_input_tokens": 150000, '
+                '"total_output_tokens": 50000, '
+                '"total_tokens": 200000}'
+            ),
+        )
         for _ in range(13):
             await _insert_job(str(uuid.uuid4()), "FAILED")
         for _ in range(6):

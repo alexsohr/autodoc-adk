@@ -26,11 +26,11 @@ export class RepoListPage {
   readonly paginationFooter: Locator = this.page.getByText(/Showing \d+-\d+ of \d+/);
 
   filterTab(name: FilterTabName): Locator {
-    return this.page.getByRole('tab', { name: new RegExp(`^${name}\\b`) });
+    return this.page.getByTestId(`filter-tab-${name.toLowerCase()}`);
   }
 
   card(repoName: string): Locator {
-    return this.page.getByRole('article').filter({ hasText: repoName });
+    return this.page.getByTestId(`repo-card-${repoName}`);
   }
 
   async openAddRepoDialog(): Promise<AddRepoDialog> {
