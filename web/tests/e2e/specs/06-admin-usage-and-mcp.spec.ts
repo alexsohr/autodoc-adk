@@ -17,6 +17,18 @@ test.describe('06 — Admin · Usage / Costs & MCP Servers', () => {
     for (const card of ['Total Tokens', 'Estimated Cost', 'Total Jobs'] as const) {
       await expect(usage.metricCard(card)).toBeVisible();
     }
+
+    // Regression guard for the AdminUsageResponse field-name mismatch:
+    // a frontend that reads stale keys would render zero placeholders even
+    // when the backend reports non-zero totals. The seed inserts exactly one
+    // COMPLETED job with token_usage so these cards must contain a non-zero
+    // digit (e.g. "2K", "$0.02", "1").
+    const tokensCard = usage.metricCard('Total Tokens');
+    const costCard = usage.metricCard('Estimated Cost');
+    const jobsCard = usage.metricCard('Total Jobs');
+    await expect(tokensCard).toContainText(/[1-9]/);
+    await expect(costCard).toContainText(/\$[\d.]*[1-9]/);
+    await expect(jobsCard).toContainText(/[1-9]/);
   });
 
   test.skip('PTS-3.4: mcp servers page loads', async ({ asDeveloper }) => {
