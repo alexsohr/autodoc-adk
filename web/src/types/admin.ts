@@ -19,14 +19,28 @@ export interface WorkerPool {
   concurrency_limit: number;
 }
 
-export interface UsageData {
+export interface TopRepoByTokens {
+  repository_id: string;
+  name: string;
   total_tokens: number;
-  estimated_cost: number;
-  daily_burn_rate: number;
-  total_jobs: number;
-  success_rate: number;
-  top_repos: { name: string; tokens: number }[];
-  usage_by_model: { model: string; tokens: number; cost: number }[];
+}
+
+export interface UsageByModel {
+  model: string;
+  total_tokens: number;
+  calls: number;
+}
+
+export interface UsageData {
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_tokens: number;
+  estimated_cost_usd: number;
+  job_count: number;
+  top_repos_by_tokens: TopRepoByTokens[];
+  usage_by_model: UsageByModel[];
+  period_start: string | null;
+  period_end: string | null;
 }
 
 export interface McpTool {

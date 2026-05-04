@@ -82,12 +82,12 @@ export default function UsageCostsPage(): ReactNode {
   const { data, isLoading, isError, error, refetch } = useAdminUsage({ range });
 
   const maxRepoTokens = useMemo(
-    () => Math.max(1, ...(data?.top_repos ?? []).map((r) => r.tokens)),
+    () => Math.max(1, ...(data?.top_repos_by_tokens ?? []).map((r) => r.total_tokens)),
     [data],
   );
 
   const maxModelTokens = useMemo(
-    () => Math.max(1, ...(data?.usage_by_model ?? []).map((m) => m.tokens)),
+    () => Math.max(1, ...(data?.usage_by_model ?? []).map((m) => m.total_tokens)),
     [data],
   );
 
@@ -156,19 +156,19 @@ export default function UsageCostsPage(): ReactNode {
             testid="usage-metric-card-total-tokens"
             label="Total Tokens"
             value={formatTokens(data?.total_tokens ?? null)}
-            subtitle={`Daily burn: ${formatTokens(data?.daily_burn_rate ?? null)}`}
+            subtitle={`Input: ${formatTokens(data?.total_input_tokens ?? null)} · Output: ${formatTokens(data?.total_output_tokens ?? null)}`}
           />
           <MetricCard
             testid="usage-metric-card-estimated-cost"
             label="Estimated Cost"
-            value={`$${(data?.estimated_cost ?? 0).toFixed(2)}`}
-            subtitle={`$${((data?.daily_burn_rate ?? 0) * 0.00001).toFixed(2)}/day`}
+            value={`$${(data?.estimated_cost_usd ?? 0).toFixed(2)}`}
+            subtitle="Based on input/output token rates"
           />
           <MetricCard
             testid="usage-metric-card-total-jobs"
             label="Total Jobs"
-            value={String(data?.total_jobs ?? 0)}
-            subtitle={`${((data?.success_rate ?? 0) * 100).toFixed(0)}% success rate`}
+            value={String(data?.job_count ?? 0)}
+            subtitle="Completed jobs in range"
           />
         </div>
       </SectionErrorBoundary>
@@ -180,7 +180,7 @@ export default function UsageCostsPage(): ReactNode {
           isLoading={isLoading}
           isError={isError}
           error={error as Error | null}
-          data={data?.top_repos}
+          data={data?.top_repos_by_tokens}
           onRetry={() => void refetch()}
           emptyMessage="No repository usage data"
         >
@@ -196,13 +196,13 @@ export default function UsageCostsPage(): ReactNode {
               Top Repositories
             </h2>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-              {(data?.top_repos ?? []).map((repo, i) => (
+              {(data?.top_repos_by_tokens ?? []).map((repo, i) => (
                 <HorizontalBar
-                  key={repo.name}
+                  key={repo.repository_id}
                   label={repo.name}
-                  value={repo.tokens}
+                  value={repo.total_tokens}
                   maxValue={maxRepoTokens}
-                  formattedValue={formatTokens(repo.tokens)}
+                  formattedValue={formatTokens(repo.total_tokens)}
                   color={barColors[i % barColors.length]}
                 />
               ))}
@@ -235,9 +235,9 @@ export default function UsageCostsPage(): ReactNode {
                 <HorizontalBar
                   key={model.model}
                   label={model.model}
-                  value={model.tokens}
+                  value={model.total_tokens}
                   maxValue={maxModelTokens}
-                  formattedValue={`${formatTokens(model.tokens)} ($${model.cost.toFixed(2)})`}
+                  formattedValue={`${formatTokens(model.total_tokens)} (${model.calls} calls)`}
                   color={barColors[i % barColors.length]}
                 />
               ))}
