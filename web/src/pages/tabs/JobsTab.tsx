@@ -438,6 +438,7 @@ function TriggerButtons({
         >
           <input
             type="checkbox"
+            data-testid="jobs-dry-run-checkbox"
             checked={dryRun}
             onChange={onToggleDryRun}
             style={{ accentColor: "var(--autodoc-primary)" }}
@@ -446,6 +447,7 @@ function TriggerButtons({
         </label>
 
         <button
+          data-testid="jobs-incremental-button"
           onClick={() => createJob.mutate({ mode: "incremental" })}
           disabled={createJob.isPending}
           style={{
@@ -465,6 +467,7 @@ function TriggerButtons({
         </button>
 
         <button
+          data-testid="jobs-full-generation-button"
           onClick={() => createJob.mutate({ mode: "full" })}
           disabled={createJob.isPending}
           style={{
@@ -742,7 +745,7 @@ export default function JobsTab(): ReactNode {
           {/* Completed jobs */}
           {(statusFilter === "" || statusFilter === "COMPLETED") &&
             completedJobs.length > 0 && (
-              <section>
+              <section data-testid="jobs-section-completed">
                 <h3
                   className="autodoc-label-md"
                   style={{
@@ -778,7 +781,7 @@ export default function JobsTab(): ReactNode {
           {/* Failed jobs */}
           {(statusFilter === "" || statusFilter === "FAILED") &&
             failedJobs.length > 0 && (
-              <section>
+              <section data-testid="jobs-section-failed">
                 <h3
                   className="autodoc-label-md"
                   style={{
@@ -800,7 +803,7 @@ export default function JobsTab(): ReactNode {
           {/* Cancelled jobs */}
           {(statusFilter === "" || statusFilter === "CANCELLED") &&
             cancelledJobs.length > 0 && (
-              <section>
+              <section data-testid="jobs-section-cancelled">
                 <h3
                   className="autodoc-label-md"
                   style={{

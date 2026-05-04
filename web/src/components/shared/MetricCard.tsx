@@ -7,11 +7,13 @@ interface MetricCardProps {
   delta?: string;
   subtitle?: string;
   icon?: string;
+  testid?: string;
 }
 
-export function MetricCard({ label, value, delta, subtitle, icon }: MetricCardProps) {
+export function MetricCard({ label, value, delta, subtitle, icon, testid }: MetricCardProps) {
   return (
     <Card
+      data-testid={testid}
       style={{
         padding: "var(--autodoc-spacing-lg)",
         background: "var(--autodoc-surface-container-low)",

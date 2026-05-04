@@ -138,6 +138,7 @@ function SidebarItem({
     <NavLink
       to={item.to}
       end={item.end}
+      data-testid={`sidebar-link-${item.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}
       className={({ isActive }) =>
         `sidebar__item ${collapsed ? "sidebar__item--icon-only" : ""} ${isActive ? "sidebar__item--active autodoc-sidebar-item--active" : ""}`
       }

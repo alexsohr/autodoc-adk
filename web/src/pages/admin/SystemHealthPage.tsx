@@ -160,6 +160,7 @@ export default function SystemHealthPage(): ReactNode {
           }}
         >
           <MetricCardWithStatus
+            testid="health-service-card-api-cluster"
             icon="api"
             label="API Cluster"
             value={`${data?.api_uptime_seconds != null ? ((data.api_uptime_seconds / (data.api_uptime_seconds + 1)) * 100).toFixed(1) : "99.9"}%`}
@@ -168,6 +169,7 @@ export default function SystemHealthPage(): ReactNode {
             status={data ? "healthy" : "healthy"}
           />
           <MetricCardWithStatus
+            testid="health-service-card-prefect-server"
             icon="hub"
             label="Prefect Server"
             value={String(data?.prefect_pool_count ?? 0)}
@@ -176,6 +178,7 @@ export default function SystemHealthPage(): ReactNode {
             status={data?.prefect_status ?? "healthy"}
           />
           <MetricCardWithStatus
+            testid="health-service-card-postgresql"
             icon="database"
             label={`PostgreSQL ${data?.database?.version ?? ""}`}
             value={data?.database?.storage_mb != null ? `${(Number(data.database.storage_mb) / 1024).toFixed(1)}GB` : "\u2014"}
@@ -184,6 +187,7 @@ export default function SystemHealthPage(): ReactNode {
             status={data?.database ? "healthy" : "healthy"}
           />
           <div
+            data-testid="health-service-card-active-workers"
             style={{
               background: "var(--autodoc-surface-container-low)",
               padding: "1.25rem 1.5rem",
@@ -248,35 +252,37 @@ export default function SystemHealthPage(): ReactNode {
       {/* Content grid: table + chart */}
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "1.5rem" }}>
         {/* Work Pools Table */}
-        <SectionErrorBoundary
-          isLoading={isLoading}
-          isError={isError}
-          error={error as Error | null}
-          data={data?.worker_pools}
-          onRetry={() => void refetch()}
-          emptyMessage="No work pools found"
-        >
-          <div>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: "0.75rem",
-              }}
-            >
-              <h2 className="autodoc-headline-md" style={{ fontSize: "1.25rem" }}>
-                Work Pools
-              </h2>
+        <div data-testid="work-pools-table">
+          <SectionErrorBoundary
+            isLoading={isLoading}
+            isError={isError}
+            error={error as Error | null}
+            data={data?.worker_pools}
+            onRetry={() => void refetch()}
+            emptyMessage="No work pools found"
+          >
+            <div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: "0.75rem",
+                }}
+              >
+                <h2 className="autodoc-headline-md" style={{ fontSize: "1.25rem" }}>
+                  Work Pools
+                </h2>
+              </div>
+              <DataTable<PoolRow>
+                columns={poolColumns}
+                data={poolRows}
+                pageSize={10}
+                emptyMessage="No work pools configured"
+              />
             </div>
-            <DataTable<PoolRow>
-              columns={poolColumns}
-              data={poolRows}
-              pageSize={10}
-              emptyMessage="No work pools configured"
-            />
-          </div>
-        </SectionErrorBoundary>
+          </SectionErrorBoundary>
+        </div>
 
         {/* Worker Capacity */}
         <div
@@ -478,6 +484,7 @@ function MetricCardWithStatus({
   valueLabel,
   detail,
   status,
+  testid,
 }: {
   icon: string;
   label: string;
@@ -485,11 +492,13 @@ function MetricCardWithStatus({
   valueLabel: string;
   detail: string;
   status: string;
+  testid?: string;
 }): ReactNode {
   const statusLabel = status === "healthy" ? "Healthy" : status === "running" ? "Running" : status;
 
   return (
     <div
+      data-testid={testid}
       style={{
         background: "var(--autodoc-surface-container-low)",
         padding: "1.25rem 1.5rem",

@@ -49,6 +49,7 @@ interface RepoCardProps {
 function RepoCard({ repo, onClick }: RepoCardProps): ReactNode {
   return (
     <button
+      data-testid={`repo-card-${repo.name}`}
       onClick={onClick}
       style={{
         display: "flex",
@@ -929,7 +930,7 @@ export default function RepoListPage(): ReactNode {
             }}
           >
             <span>
-              Showing {startIndex + 1}&ndash;{endIndex} of {totalItems}
+              Showing {startIndex + 1}-{endIndex} of {totalItems}
             </span>
             {totalPages > 1 && (
               <div style={{ display: "flex", gap: "0.5rem" }}>

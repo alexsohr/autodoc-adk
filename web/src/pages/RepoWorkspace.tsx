@@ -119,6 +119,7 @@ export default function RepoWorkspace(): ReactNode {
           <>
             {/* Breadcrumbs */}
             <div
+              data-testid="repo-breadcrumb"
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -185,6 +186,7 @@ export default function RepoWorkspace(): ReactNode {
                 )}
               </div>
               <button
+                data-testid="workspace-run-full-generation"
                 onClick={() => navigate("jobs")}
                 style={{
                   background: "var(--autodoc-gradient-cta)",
@@ -226,6 +228,7 @@ export default function RepoWorkspace(): ReactNode {
                   key={tab.path}
                   to={tab.path}
                   end={tab.end}
+                  data-testid={`workspace-tab-${tab.label.toLowerCase().replace(/\s+/g, '-')}`}
                   style={({ isActive }) => (isActive ? tabActiveStyle : tabBaseStyle)}
                 >
                   {tab.label}

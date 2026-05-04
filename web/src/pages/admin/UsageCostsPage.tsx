@@ -153,16 +153,19 @@ export default function UsageCostsPage(): ReactNode {
           }}
         >
           <MetricCard
+            testid="usage-metric-card-total-tokens"
             label="Total Tokens"
             value={formatTokens(data?.total_tokens ?? null)}
             subtitle={`Daily burn: ${formatTokens(data?.daily_burn_rate ?? null)}`}
           />
           <MetricCard
+            testid="usage-metric-card-estimated-cost"
             label="Estimated Cost"
             value={`$${(data?.estimated_cost ?? 0).toFixed(2)}`}
             subtitle={`$${((data?.daily_burn_rate ?? 0) * 0.00001).toFixed(2)}/day`}
           />
           <MetricCard
+            testid="usage-metric-card-total-jobs"
             label="Total Jobs"
             value={String(data?.total_jobs ?? 0)}
             subtitle={`${((data?.success_rate ?? 0) * 100).toFixed(0)}% success rate`}
