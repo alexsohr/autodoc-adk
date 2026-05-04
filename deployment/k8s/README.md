@@ -34,6 +34,7 @@ Infrastructure (PostgreSQL + Redis) in Docker, application on K8s.
    docker build -t autodoc-api:latest -f deployment/docker/Dockerfile.api .
    docker build -t autodoc-worker:latest -f deployment/docker/Dockerfile.worker .
    docker build -t autodoc-flow:latest -f deployment/docker/Dockerfile.flow .
+   docker build -t autodoc-web:latest -f deployment/docker/Dockerfile.web .
    ```
 
 3. Apply K8s manifests:
@@ -46,10 +47,30 @@ Infrastructure (PostgreSQL + Redis) in Docker, application on K8s.
    ./deployment/k8s/scripts/apply-secrets.sh
    ```
 
-5. Start port-forwards (needed for CLI, dashboard, and API access):
+5. Access the services — choose **one** of:
+
+   **Option A: Port-forwards** (no ingress controller required):
    ```bash
-   kubectl port-forward -n autodoc svc/prefect-api 4200:4200 &   # Prefect dashboard + CLI
-   kubectl port-forward -n autodoc svc/autodoc-api 8080:8080 &   # AutoDoc API + Swagger UI
+   kubectl port-forward -n autodoc svc/autodoc-web 3000:3000 &     # Dashboard (serves SPA + proxies /api in-cluster)
+   kubectl port-forward -n autodoc svc/prefect-api 4200:4200 &     # Prefect dashboard + CLI
+   kubectl port-forward -n autodoc svc/autodoc-api 8080:8080 &     # Direct API access (Swagger UI, curl)
+   ```
+
+   > **Path differences:** Port-forwards hit each service at its root — no path prefix.
+   > The dashboard at `localhost:3000` is self-sufficient: its nginx proxies
+   > `localhost:3000/api/*` to the API service in-cluster. The API port-forward
+   > (`localhost:8080`) is only needed for direct access (Swagger UI, curl) and
+   > serves the API **without** the `/api` prefix (e.g., `localhost:8080/health`,
+   > not `localhost:8080/api/health`). Similarly, Prefect is at
+   > `localhost:4200/api/...`, not `localhost:4200/prefect/api/...`.
+
+   **Option B: Local ingress controller** (single entrypoint, path-based routing):
+   If you have an nginx ingress controller running locally, the dev-k8s ingress routes
+   everything through `http://localhost` with path prefixes — see
+   [Ingress & Path-Based Routing](#ingress--path-based-routing).
+   You still need the Prefect port-forward for CLI commands (`prefect deploy`, etc.):
+   ```bash
+   kubectl port-forward -n autodoc svc/prefect-api 4200:4200 &   # Prefect CLI
    ```
 
 6. Set up work pools:
@@ -65,9 +86,17 @@ Infrastructure (PostgreSQL + Redis) in Docker, application on K8s.
    ```
 
 8. Verify:
-   - Prefect dashboard: http://localhost:4200/dashboard
-   - AutoDoc API (Swagger UI): http://localhost:8080/docs
-   - Health check: `curl http://localhost:8080/health`
+
+   | Service | Port-forward URL | Ingress URL |
+   |---------|-----------------|-------------|
+   | Dashboard | http://localhost:3000 | http://localhost/ |
+   | API (Swagger UI) | http://localhost:8080/docs | http://localhost/api/docs |
+   | API health check | `curl http://localhost:8080/health` | `curl http://localhost/api/health` |
+   | Prefect dashboard | http://localhost:4200/dashboard | http://localhost/prefect/dashboard |
+
+   > Note: The ingress adds path prefixes (`/api`, `/prefect`) and strips them
+   > before forwarding. Port-forwards skip the ingress entirely, so services are
+   > at their native paths (no prefix).
 
 #### Networking (dev-k8s)
 
@@ -97,10 +126,12 @@ All components on K8s with external managed PostgreSQL and Redis.
    docker build -t $REGISTRY/api:$COMMIT_SHA -f deployment/docker/Dockerfile.api .
    docker build -t $REGISTRY/worker:$COMMIT_SHA -f deployment/docker/Dockerfile.worker .
    docker build -t $REGISTRY/flow:$COMMIT_SHA -f deployment/docker/Dockerfile.flow .
+   docker build -t $REGISTRY/web:$COMMIT_SHA -f deployment/docker/Dockerfile.web .
 
    docker push $REGISTRY/api:$COMMIT_SHA
    docker push $REGISTRY/worker:$COMMIT_SHA
    docker push $REGISTRY/flow:$COMMIT_SHA
+   docker push $REGISTRY/web:$COMMIT_SHA
    ```
 
 2. Update the prod overlay image tags and apply:
@@ -122,6 +153,36 @@ All components on K8s with external managed PostgreSQL and Redis.
      prefect deploy -n prod-full-generation -n prod-scope-processing -n prod-incremental
    ```
 
+## Ingress & Path-Based Routing
+
+All external traffic enters through a single hostname and is routed by path using two Ingress resources:
+
+| Path | Backend | Behavior |
+|------|---------|----------|
+| `/` | `autodoc-web:3000` | Dashboard SPA (no rewrite) |
+| `/api/*` | `autodoc-api:8080` | API — prefix stripped (`/api/repositories` → `/repositories`) |
+| `/prefect/*` | `prefect-api:4200` | Prefect Server — prefix stripped (`/prefect/api/health` → `/api/health`) |
+
+The base manifests use `autodoc.example.com` as a placeholder hostname. Override it per environment:
+
+- **ConfigMap key**: `AUTODOC_PUBLIC_HOSTNAME` sets the hostname (base: `autodoc.example.com`, dev-k8s: `localhost`)
+- **Ingress patch**: Each overlay patches the Ingress `host` and `tls` fields to match
+
+### dev-k8s
+
+The dev-k8s overlay (`overlays/dev-k8s/patches/ingress.yaml`) sets the hostname to `localhost` and disables TLS. Access everything via port-forward or a local ingress controller.
+
+### prod
+
+Set `AUTODOC_PUBLIC_HOSTNAME` and the Ingress `host` / `tls` / `secretName` fields in your prod overlay to match your real domain and TLS certificate.
+
+### Two-layer routing
+
+Routing is handled at two layers:
+
+1. **Ingress** (cluster edge): Routes `/api/*` and `/prefect/*` to their backend services, stripping the path prefix. Routes `/` to the web dashboard.
+2. **nginx in `autodoc-web`** (container level): The web container's nginx (`nginx-web.conf.template`) also proxies `/api/*` to `autodoc-api:8080` using the `API_UPSTREAM` config var. This lets the SPA make API calls from the browser regardless of whether the ingress is present (e.g., port-forward directly to the web service).
+
 ## Docker Images
 
 Flow code is baked into the Docker images — no remote code storage (Git, S3) is needed at runtime. The `prefect.yaml` uses `build: []` (skip Prefect's image build) and `pull: [set_working_directory: /app]` (code is already in the container).
@@ -131,6 +192,7 @@ Flow code is baked into the Docker images — no remote code storage (Git, S3) i
 | `autodoc-api` | `Dockerfile.api` | FastAPI REST API server |
 | `autodoc-worker` | `Dockerfile.worker` | Prefect worker (polls work pools, creates K8s Jobs) |
 | `autodoc-flow` | `Dockerfile.flow` | Flow runner with all AI dependencies + source code |
+| `autodoc-web` | `Dockerfile.web` | Web dashboard (nginx serving React SPA, reverse proxies `/api` to API) |
 
 The `AUTODOC_FLOW_IMAGE` env var (default: `autodoc-flow:latest`) controls which image the work pools use for flow runner K8s Jobs.
 
@@ -179,7 +241,7 @@ For production, consider using External Secrets Operator or sealed-secrets.
 ## Troubleshooting
 
 **Pods stuck in ImagePullBackOff**:
-For dev-k8s with Docker Desktop, images must be built locally with the exact names used in the manifests (`autodoc-api:latest`, `autodoc-worker:latest`). The base manifests set `imagePullPolicy: IfNotPresent` to use local images. If using minikube, load images with `minikube image load`.
+For dev-k8s with Docker Desktop, images must be built locally with the exact names used in the manifests (`autodoc-api:latest`, `autodoc-worker:latest`, `autodoc-web:latest`). The base manifests set `imagePullPolicy: IfNotPresent` to use local images. If using minikube, load images with `minikube image load`.
 
 **Prefect dashboard says "Can't connect to Server API"**:
 The Prefect UI runs in your browser and needs to reach the API. The dev-k8s overlay sets `PREFECT_UI_API_URL=http://localhost:4200/api` for this. Ensure your port-forward is active: `kubectl port-forward -n autodoc svc/prefect-api 4200:4200 &`.
@@ -195,3 +257,6 @@ Check CronJob status: `kubectl get cronjobs -n autodoc`. The cleanup CronJob nee
 
 **Prefect background services issues**:
 Only one instance should run (`replicas: 1`). Check logs: `kubectl logs -n autodoc -l app.kubernetes.io/component=prefect-background-services`.
+
+**Dashboard not loading or API calls failing**:
+The web dashboard container proxies `/api/*` requests to the `autodoc-api` service. Verify the API service is running and reachable: `kubectl get svc -n autodoc autodoc-api`. Check nginx logs: `kubectl logs -n autodoc -l app.kubernetes.io/component=web`.

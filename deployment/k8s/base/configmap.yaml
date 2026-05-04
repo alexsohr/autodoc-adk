@@ -63,6 +63,13 @@ data:
   OTEL_EXPORTER_OTLP_ENDPOINT: "http://localhost:4317"
   OTEL_SERVICE_NAME: "autodoc-adk"
 
+  # Web frontend
+  # API_UPSTREAM is used by nginx in the web container to proxy /api/* requests.
+  # In K8s this is the in-cluster service; the ingress handles external routing.
+  API_UPSTREAM: "autodoc-api:8080"
+  # Public hostname for the ingress (override per overlay)
+  AUTODOC_PUBLIC_HOSTNAME: "autodoc.example.com"
+
   # Database connection pool
   DB_POOL_SIZE: "5"
   DB_MAX_OVERFLOW: "10"

@@ -7,3 +7,5 @@ metadata:
 data:
   AUTODOC_FLOW_DEPLOYMENT_PREFIX: "dev-k8s"
   OTEL_ENABLED: "false"
+  # Override hostname for local K8s (port-forward or local ingress)
+  AUTODOC_PUBLIC_HOSTNAME: "localhost"

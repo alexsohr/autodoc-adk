@@ -103,6 +103,12 @@ class RepositoryResponse(BaseModel):
     name: str
     branch_mappings: dict[str, str]
     public_branch: str
+    default_branch: str = ""
+    status: str = "pending"
+    page_count: int = 0
+    scope_count: int = 0
+    avg_quality_score: float | None = None
+    last_generated_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 

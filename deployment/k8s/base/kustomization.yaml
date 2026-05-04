@@ -24,6 +24,9 @@ resources:
   # API Server
   - api/deployment.yaml
   - api/service.yaml
+  # Web Frontend
+  - web/deployment.yaml
+  - web/service.yaml
   # Ingress
   - ingress.yaml
   # Cleanup
