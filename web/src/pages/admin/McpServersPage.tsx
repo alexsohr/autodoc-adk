@@ -122,6 +122,7 @@ export default function McpServersPage(): ReactNode {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem" }}>
           {/* Server status card */}
           <div
+            data-testid="mcp-server-status-card"
             style={{
               background: "var(--autodoc-surface-container-lowest)",
               boxShadow: "var(--autodoc-shadow-ambient)",
@@ -258,6 +259,7 @@ export default function McpServersPage(): ReactNode {
               return (
                 <button
                   key={key}
+                  data-testid={`mcp-integration-tab-${key === "claude" ? "claude-code" : key}`}
                   onClick={() => setActiveSnippet(key)}
                   style={{
                     padding: "0.5rem 1rem",
@@ -344,6 +346,7 @@ export default function McpServersPage(): ReactNode {
           ].map((item) => (
             <div
               key={item.label}
+              data-testid={`mcp-security-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
               style={{
                 background: "var(--autodoc-surface-container-low)",
                 borderRadius: "8px",

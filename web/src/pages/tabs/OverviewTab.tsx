@@ -38,6 +38,7 @@ function LatestJobCard({ repoId, job }: LatestJobCardProps): ReactNode {
   if (!job) {
     return (
       <div
+        data-testid="overview-current-job-card"
         style={{
           background: "var(--autodoc-surface-container-lowest)",
           borderRadius: "16px",
@@ -78,6 +79,7 @@ function LatestJobCard({ repoId, job }: LatestJobCardProps): ReactNode {
 
   return (
     <div
+      data-testid="overview-current-job-card"
       style={{
         background: "var(--autodoc-surface-container-low)",
         borderRadius: "16px",
@@ -267,6 +269,7 @@ interface RepoInfoPanelProps {
 function RepoInfoPanel({ url, defaultBranch, provider, scopeCount, pageCount }: RepoInfoPanelProps): ReactNode {
   return (
     <div
+      data-testid="overview-repo-info-panel"
       style={{
         background: "var(--autodoc-surface-container-lowest)",
         borderRadius: "16px",
@@ -416,7 +419,10 @@ const EVENT_LABELS: Record<ActivityEventType, string> = {
 function ActivityTimeline({ events }: { events: ActivityEvent[] }): ReactNode {
   if (events.length === 0) {
     return (
-      <p style={{ color: "var(--autodoc-on-surface-variant)", fontSize: "0.875rem", textAlign: "center", padding: "1.5rem" }}>
+      <p
+        data-testid="overview-recent-activity"
+        style={{ color: "var(--autodoc-on-surface-variant)", fontSize: "0.875rem", textAlign: "center", padding: "1.5rem" }}
+      >
         No recent activity
       </p>
     );
@@ -424,6 +430,7 @@ function ActivityTimeline({ events }: { events: ActivityEvent[] }): ReactNode {
 
   return (
     <div
+      data-testid="overview-recent-activity"
       style={{
         background: "var(--autodoc-surface-container-lowest)",
         borderRadius: "16px",
@@ -714,9 +721,11 @@ export default function OverviewTab(): ReactNode {
               </SectionErrorBoundary>
 
               {/* Scope Breakdown Table */}
-              <SectionErrorBoundary isLoading={false} isError={false} data={overview.scope_summaries}>
-                <ScopeBreakdownTable scopes={overview.scope_summaries ?? []} />
-              </SectionErrorBoundary>
+              <div data-testid="overview-scope-breakdown-table">
+                <SectionErrorBoundary isLoading={false} isError={false} data={overview.scope_summaries}>
+                  <ScopeBreakdownTable scopes={overview.scope_summaries ?? []} />
+                </SectionErrorBoundary>
+              </div>
             </div>
 
             {/* Right column */}

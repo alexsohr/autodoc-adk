@@ -19,8 +19,12 @@ export class WorkspacePage {
     await this.breadcrumb.waitFor();
   }
 
-  readonly breadcrumb:       Locator = this.page.getByTestId('repo-breadcrumb');
-  readonly runFullGenButton: Locator = this.page.getByTestId('workspace-run-full-generation');
+  readonly breadcrumb:          Locator = this.page.getByTestId('repo-breadcrumb');
+  readonly runFullGenButton:    Locator = this.page.getByTestId('workspace-run-full-generation');
+  readonly currentJobCard:      Locator = this.page.getByTestId('overview-current-job-card');
+  readonly repoInfoPanel:       Locator = this.page.getByTestId('overview-repo-info-panel');
+  readonly recentActivityPanel: Locator = this.page.getByTestId('overview-recent-activity');
+  readonly scopeBreakdownTable: Locator = this.page.getByTestId('overview-scope-breakdown-table');
 
   metricCard(name: MetricCardName): Locator {
     const slug = name.toLowerCase().replace(/\s+/g, '-');

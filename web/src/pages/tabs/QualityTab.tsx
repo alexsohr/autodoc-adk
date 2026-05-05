@@ -55,8 +55,10 @@ function AgentScoreCard({
   delta: number | null;
   trendScores: number[];
 }): ReactNode {
+  const slug = agentName.toLowerCase().replace(/\s+/g, "-");
   return (
     <div
+      data-testid={`quality-agent-card-${slug}`}
       style={{
         background: "var(--autodoc-surface-container-lowest)",
         boxShadow: "var(--autodoc-shadow-ambient)",
@@ -488,7 +490,7 @@ function QualityTabContent(): ReactNode {
       )}
 
       {/* Page Quality Table */}
-      <div>
+      <div data-testid="quality-page-table">
         <h2 className="autodoc-headline-md" style={{ marginBottom: "0.75rem" }}>
           Page Quality
         </h2>

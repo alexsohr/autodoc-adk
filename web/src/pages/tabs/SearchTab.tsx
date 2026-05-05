@@ -339,52 +339,57 @@ export default function SearchTab(): ReactNode {
       )}
 
       {query && (
-        <SectionErrorBoundary
-          isLoading={isLoading}
-          isError={isError}
-          error={error instanceof Error ? error : null}
-          data={results.length > 0 ? results : undefined}
-          emptyMessage={`No results found for "${query}". Try a different search term or mode.`}
-        >
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "0.75rem",
-            }}
+        // Wrapper carries a testid only when the boundary is in its error
+        // state so e2e specs can assert deterministically on the search-error
+        // branch (see PTS-2.4 "results OR error/empty state" criterion).
+        <div {...(isError ? { "data-testid": "search-error-state" } : {})}>
+          <SectionErrorBoundary
+            isLoading={isLoading}
+            isError={isError}
+            error={error instanceof Error ? error : null}
+            data={results.length > 0 ? results : undefined}
+            emptyMessage={`No results found for "${query}". Try a different search term or mode.`}
           >
-            {visibleResults.map((result) => (
-              <SearchResultCard
-                key={result.page_key + (result.best_chunk_content ?? "")}
-                result={result}
-                repoId={repoId}
-              />
-            ))}
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.75rem",
+              }}
+            >
+              {visibleResults.map((result) => (
+                <SearchResultCard
+                  key={result.page_key + (result.best_chunk_content ?? "")}
+                  result={result}
+                  repoId={repoId}
+                />
+              ))}
 
-            {/* Load more */}
-            {hasMore && (
-              <button
-                onClick={handleLoadMore}
-                style={{
-                  alignSelf: "center",
-                  padding: "0.625rem 2rem",
-                  borderRadius: "9999px",
-                  border: "none",
-                  background: "var(--autodoc-surface-container)",
-                  color: "var(--autodoc-primary)",
-                  fontWeight: 600,
-                  fontSize: "0.875rem",
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                  transition:
-                    "background-color 200ms ease-out, transform 200ms ease-out",
-                }}
-              >
-                Load more ({results.length - visibleCount} remaining)
-              </button>
-            )}
-          </div>
-        </SectionErrorBoundary>
+              {/* Load more */}
+              {hasMore && (
+                <button
+                  onClick={handleLoadMore}
+                  style={{
+                    alignSelf: "center",
+                    padding: "0.625rem 2rem",
+                    borderRadius: "9999px",
+                    border: "none",
+                    background: "var(--autodoc-surface-container)",
+                    color: "var(--autodoc-primary)",
+                    fontWeight: 600,
+                    fontSize: "0.875rem",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    transition:
+                      "background-color 200ms ease-out, transform 200ms ease-out",
+                  }}
+                >
+                  Load more ({results.length - visibleCount} remaining)
+                </button>
+              )}
+            </div>
+          </SectionErrorBoundary>
+        </div>
       )}
     </div>
   );
