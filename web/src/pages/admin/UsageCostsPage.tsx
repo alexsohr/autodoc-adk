@@ -107,7 +107,10 @@ export default function UsageCostsPage(): ReactNode {
           <h1 className="autodoc-headline-lg" style={{ marginBottom: "0.25rem" }}>
             Usage & Costs
           </h1>
-          <p style={{ color: "var(--autodoc-on-surface-variant)", fontSize: "0.9375rem" }}>
+          <p
+            data-testid="usage-subtitle"
+            style={{ color: "var(--autodoc-on-surface-variant)", fontSize: "0.9375rem" }}
+          >
             Token consumption, cost estimates, and efficiency metrics
           </p>
         </div>
@@ -118,6 +121,8 @@ export default function UsageCostsPage(): ReactNode {
               <button
                 key={opt.value}
                 data-testid={`usage-range-${opt.label.toLowerCase().replace(/\s+/g, "-")}`}
+                data-active={isActive ? "true" : undefined}
+                aria-pressed={isActive}
                 onClick={() => setRange(opt.value)}
                 style={{
                   padding: "0.375rem 0.875rem",
