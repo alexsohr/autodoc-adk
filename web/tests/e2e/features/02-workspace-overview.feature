@@ -39,6 +39,7 @@ Feature: Repo Workspace — Overview
     And the workspace "Overview" tab is marked active
     And the "Overview" tab content is rendered
     And the breadcrumb still shows the "digitalClock" repository name
+    And the workspace header still shows the "digitalClock" repository name and status
     And the "Run Full Generation" button is still visible
     When I click the workspace "Docs" tab
     Then the URL path corresponds to the "Docs" workspace tab

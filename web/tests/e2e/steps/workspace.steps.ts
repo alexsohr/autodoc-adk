@@ -148,3 +148,13 @@ Then('the {string} button is still visible', async ({}, _label: string) => {
   // @todo: implement when PTS-2.2 is wired up
   await Promise.resolve();
 });
+
+Then(
+  'the workspace header still shows the {string} repository name and status',
+  async ({}, _symbolic: string) => {
+    // @todo: implement when PTS-2.2 is wired up — assert WorkspacePage.header shows
+    //        REPOS[symbolic].name and a status badge (PO needs a `header` Locator).
+    await Promise.resolve();
+    void _symbolic;
+  },
+);
