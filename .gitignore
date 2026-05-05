@@ -68,6 +68,4 @@ node_modules/
 web/test-reports/
 /docs/
 
-# Claude Code session-bound runtime lockfiles
-.claude/scheduled_tasks.lock
 
