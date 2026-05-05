@@ -1,4 +1,9 @@
-import { test as base, type Browser, type Page } from '@playwright/test';
+import type { Browser, Page } from '@playwright/test';
+// IMPORTANT: extend playwright-bdd's `test`, not @playwright/test's base.
+// createBdd() requires it. The bdd `test` is itself an extension of
+// @playwright/test, so existing specs/0N-*.spec.ts that import via
+// fixtures/test.ts continue to work unchanged.
+import { test as base } from 'playwright-bdd';
 
 export type Role = 'admin' | 'developer' | 'viewer';
 

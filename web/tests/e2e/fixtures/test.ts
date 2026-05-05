@@ -1,3 +1,3 @@
-export { authTest as test } from './auth';
+export { authTest as test } from '../support/auth';
 export { expect } from '@playwright/test';
-export { stubSearch503, stubHealthDegraded } from './api-stubs';
+export { stubSearch503, stubHealthDegraded } from '../support/api-stubs';

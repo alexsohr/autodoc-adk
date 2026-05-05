@@ -1,6 +1,6 @@
 import { test, expect } from '../fixtures/test';
 import { WorkspacePage } from '../pages/WorkspacePage';
-import { REPOS } from '../helpers/seed-data';
+import { REPOS } from '../support/seed-data';
 
 // Source: docs/ui/02-repo-workspace-overview.md
 // Scenarios: docs/ui/test-scenarios/02-workspace-overview.test-scenarios.md

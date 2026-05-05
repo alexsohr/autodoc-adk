@@ -1,7 +1,7 @@
 import { test, expect } from '../fixtures/test';
 import { WorkspacePage } from '../pages/WorkspacePage';
 import { SearchTab } from '../pages/SearchTab';
-import { REPOS } from '../helpers/seed-data';
+import { REPOS } from '../support/seed-data';
 
 // Source: docs/ui/03-repo-workspace-docs-search-chat.md
 // Scenarios: docs/ui/test-scenarios/03-docs-search-chat.test-scenarios.md

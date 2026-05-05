@@ -1,6 +1,6 @@
 import { test, expect } from '../fixtures/test';
 import { RepoListPage } from '../pages/RepoListPage';
-import { REPOS } from '../helpers/seed-data';
+import { REPOS } from '../support/seed-data';
 
 // Source: docs/ui/01-repository-list-and-navigation.md
 // Scenarios: docs/ui/test-scenarios/01-repo-list-and-nav.test-scenarios.md

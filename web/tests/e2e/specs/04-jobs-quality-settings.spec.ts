@@ -1,7 +1,7 @@
 import { test, expect } from '../fixtures/test';
 import { WorkspacePage } from '../pages/WorkspacePage';
 import { JobsTab } from '../pages/JobsTab';
-import { REPOS } from '../helpers/seed-data';
+import { REPOS } from '../support/seed-data';
 
 // Source: docs/ui/04-repo-workspace-jobs-quality-settings.md
 // Scenarios: docs/ui/test-scenarios/04-jobs-quality-settings.test-scenarios.md

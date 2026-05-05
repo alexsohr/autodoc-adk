@@ -24,10 +24,12 @@ cd web && npm run test:e2e:headed   # headed Chromium
 
 ## Folder layout
 
-- `specs/` — six spec files (`01-…06-`), one per `docs/ui/0N-*.md` feature.
-- `pages/` — Page Objects. Tests use these; selectors do not appear in spec files.
-- `fixtures/` — `test.ts` (re-export), `auth.ts` (role contexts), `api-stubs.ts` (route mocks).
-- `helpers/` — `seed-data.ts` (typed manifest re-export), `selectors.ts`.
+- `specs/` — six hand-written spec files (`01-…06-`), one per `docs/ui/0N-*.md` feature.
+- `features/` — Gherkin `.feature` files (BDD scenarios). Compiled by playwright-bdd.
+- `steps/` — Step definitions (`bdd.ts` wires `createBdd(authTest)`; `*.steps.ts` are domain steps).
+- `pages/` — Page Objects. Both specs and steps use these; selectors do not appear in spec/step files.
+- `support/` — `auth.ts` (role contexts), `api-stubs.ts` (route mocks), `seed-data.ts` (typed manifest re-export), `hooks.ts` (BDD Before/After), `world.ts` (scenario-scoped state shape), `selectors.ts`.
+- `fixtures/test.ts` — legacy re-export kept so the existing `specs/0N-*.spec.ts` keep working; new tests should not import from here.
 
 ## Test scenarios
 

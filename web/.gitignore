@@ -1,4 +1,6 @@
 tests/e2e/.seed-data.json
+tests/e2e/.features-gen/
+tests/e2e/cucumber-report/
 playwright-report/
 test-results/
 .playwright/
