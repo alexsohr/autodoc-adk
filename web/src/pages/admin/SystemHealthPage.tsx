@@ -132,6 +132,7 @@ export default function SystemHealthPage(): ReactNode {
           <span style={{ color: "var(--autodoc-primary)" }}>Snapshot</span>
         </h1>
         <p
+          data-testid="health-subtitle"
           style={{
             color: "var(--autodoc-on-surface-variant)",
             maxWidth: "640px",
@@ -286,6 +287,7 @@ export default function SystemHealthPage(): ReactNode {
 
         {/* Worker Capacity */}
         <div
+          data-testid="health-worker-capacity"
           style={{
             background: "var(--autodoc-surface-container-lowest)",
             borderRadius: "16px",
@@ -313,7 +315,7 @@ export default function SystemHealthPage(): ReactNode {
               paddingTop: "1rem",
             }}
           >
-            <div>
+            <div data-testid="health-capacity-current-peak">
               <p
                 style={{
                   fontSize: "0.625rem",
@@ -333,7 +335,7 @@ export default function SystemHealthPage(): ReactNode {
                 </span>
               </p>
             </div>
-            <div style={{ textAlign: "right" }}>
+            <div data-testid="health-capacity-avg-wait" style={{ textAlign: "right" }}>
               <p
                 style={{
                   fontSize: "0.625rem",
@@ -356,6 +358,7 @@ export default function SystemHealthPage(): ReactNode {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem" }}>
         {/* Auto-Scale CTA */}
         <div
+          data-testid="health-cta-banner"
           style={{
             background: "var(--autodoc-gradient-cta)",
             padding: "2rem",
@@ -378,6 +381,7 @@ export default function SystemHealthPage(): ReactNode {
           </p>
           <div style={{ display: "flex", gap: "0.75rem" }}>
             <button
+              data-testid="health-cta-configure"
               style={{
                 background: "white",
                 color: "var(--autodoc-primary)",
@@ -394,6 +398,7 @@ export default function SystemHealthPage(): ReactNode {
               Configure Auto-Scale
             </button>
             <button
+              data-testid="health-cta-view-logs"
               style={{
                 background: "rgba(255, 255, 255, 0.15)",
                 color: "white",
@@ -421,6 +426,7 @@ export default function SystemHealthPage(): ReactNode {
           ].map((stat) => (
             <div
               key={stat.label}
+              data-testid={`health-footer-${stat.label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`}
               style={{
                 background: "var(--autodoc-surface-container-high)",
                 borderRadius: "16px",
