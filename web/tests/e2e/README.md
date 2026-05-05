@@ -28,7 +28,7 @@ cd web && npm run test:e2e:headed   # headed Chromium
 - `features/` — Gherkin `.feature` files (BDD scenarios). Compiled by playwright-bdd.
 - `steps/` — Step definitions (`bdd.ts` wires `createBdd(authTest)`; `*.steps.ts` are domain steps).
 - `pages/` — Page Objects. Both specs and steps use these; selectors do not appear in spec/step files.
-- `support/` — `auth.ts` (role contexts), `api-stubs.ts` (route mocks), `seed-data.ts` (typed manifest re-export), `hooks.ts` (BDD Before/After), `world.ts` (scenario-scoped state shape), `selectors.ts`.
+- `support/` — `auth.ts` (role contexts), `api-stubs.ts` (route mocks), `seed-data.ts` (typed manifest re-export), `hooks.ts` (BDD Before/After).
 - `fixtures/test.ts` — legacy re-export kept so the existing `specs/0N-*.spec.ts` keep working; new tests should not import from here.
 
 ## Test scenarios
@@ -45,7 +45,7 @@ files plus the corresponding `docs/ui/0N-*.md` UI description.
 | `playwright-nightly.yml` | cron 06:00 UTC + manual | chromium + firefox | no (stub) |
 | `playwright-live.yml` | manual + `live-llm` PR label | chromium | yes (gated env) |
 
-The BDD projects (`bdd-chromium`, `bdd-firefox`) are not yet wired into CI; run them locally via `--project=bdd-chromium` (or omit `--project` to run everything).
+All three workflows run both the legacy `chromium`/`firefox` projects and the BDD `bdd-chromium`/`bdd-firefox` projects in the same Playwright invocation, so migrated `.feature` scenarios stay in CI coverage. Locally, run them via `--project=bdd-chromium` (or omit `--project` to run everything).
 
 ## Debugging
 
