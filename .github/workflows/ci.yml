@@ -114,6 +114,13 @@ jobs:
       - name: Start web preview
         working-directory: web
         run: nohup npx vite preview --port 4173 --host 0.0.0.0 > preview.log 2>&1 &
+      - name: Generate BDD test files from .feature
+        working-directory: web
+        # `defineBddConfig` in playwright.config.ts does NOT trigger codegen
+        # on its own when `playwright test` runs against a fresh tree
+        # (no .features-gen/). Explicit bddgen ensures the spec files exist
+        # before Playwright walks testDir.
+        run: npx bddgen test -c tests/e2e/playwright.config.ts
       - name: Run Playwright
         working-directory: web
         # Runs the BDD scenarios from features/*.feature. Post-migration the

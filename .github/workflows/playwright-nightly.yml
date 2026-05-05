@@ -62,6 +62,10 @@ jobs:
       - working-directory: web
         run: nohup npx vite preview --port 4173 --host 0.0.0.0 > preview.log 2>&1 &
       - working-directory: web
+        # Generate BDD spec files before Playwright runs (defineBddConfig
+        # alone doesn't trigger codegen on a fresh tree).
+        run: npx bddgen test -c tests/e2e/playwright.config.ts
+      - working-directory: web
         # Post-migration: the chromium/firefox projects ARE the BDD projects
         # (legacy bdd-* names were renamed back to chromium/firefox when
         # specs/ retired). Matrix entry directly names the project.
