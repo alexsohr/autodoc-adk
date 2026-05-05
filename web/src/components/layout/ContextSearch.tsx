@@ -172,6 +172,7 @@ export function ContextSearch() {
       <input
         ref={inputRef}
         type="text"
+        data-testid="topbar-global-search"
         className="context-search__input"
         placeholder={placeholder}
         value={query}
