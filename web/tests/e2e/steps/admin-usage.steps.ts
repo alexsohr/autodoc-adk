@@ -2,30 +2,10 @@ import type { Page } from '@playwright/test';
 import { expect } from '@playwright/test';
 import { Then, When } from './bdd';
 import { UsagePage } from '../pages/admin/UsagePage';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Console-error tracking
-//
-// PTS-3.3's acceptance criteria from docs/ui/00-index.md ends with "no console
-// errors". Same pattern as steps/admin-health.steps.ts (PR 05): per-Page
-// WeakMap of error messages, listener registered before navigation. The
-// duplication is intentional for now; will be lifted into a shared support
-// module in the cleanup PR (07).
-//
-// WeakMap (rather than a module-level Map) keyed on the Page lets entries
-// disappear automatically when the BrowserContext closes — important because
-// the @as-developer fixture builds a fresh context per scenario.
-// ─────────────────────────────────────────────────────────────────────────────
-const CONSOLE_ERRORS = new WeakMap<Page, string[]>();
+import { trackConsoleErrors, expectNoConsoleErrors } from '../support/console-errors';
 
 async function gotoUsageWithConsoleTracking(page: Page): Promise<void> {
-  const errors: string[] = [];
-  CONSOLE_ERRORS.set(page, errors);
-  page.on('console', (msg) => {
-    if (msg.type() === 'error') {
-      errors.push(msg.text());
-    }
-  });
+  trackConsoleErrors(page);
   const usage = new UsagePage(page);
   await usage.goto();
 }
@@ -174,9 +154,5 @@ Then('the Cost Efficiency Tip banner is visible', async ({ page }) => {
 });
 
 Then('no console errors were logged during Usage and Costs page load', async ({ page }) => {
-  const errors = CONSOLE_ERRORS.get(page) ?? [];
-  expect(
-    errors,
-    `Expected no console errors during /admin/usage load, got:\n${errors.join('\n')}`,
-  ).toEqual([]);
+  expectNoConsoleErrors(page);
 });

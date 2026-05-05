@@ -121,7 +121,6 @@ export default function UsageCostsPage(): ReactNode {
               <button
                 key={opt.value}
                 data-testid={`usage-range-${opt.label.toLowerCase().replace(/\s+/g, "-")}`}
-                data-active={isActive ? "true" : undefined}
                 aria-pressed={isActive}
                 onClick={() => setRange(opt.value)}
                 style={{

@@ -1,5 +1,10 @@
 # AutoDoc Dashboard — Playwright E2E Tests
 
+The dashboard E2E suite is **Gherkin-only**. `playwright-bdd@^8.5.0`
+compiles `features/*.feature` into Playwright test files at config-load
+time. The legacy `specs/` directory and `fixtures/` re-export shim have
+been retired — this README reflects the post-migration state.
+
 ## Run locally
 
 ```bash
@@ -18,24 +23,21 @@ cd web && npm run test:e2e:ui       # Playwright UI
 cd web && npm run test:e2e:headed   # headed Chromium
 ```
 
-`globalSetup` polls `http://localhost:8080/health`, calls `POST /_e2e/reset`, runs
-`uv run python -m tests.e2e_seed.seed_playwright`, and writes the manifest to
-`web/tests/e2e/.seed-data.json` (gitignored).
+`globalSetup` polls `http://localhost:8080/health`, calls `POST /_e2e/reset`,
+runs `uv run python -m tests.e2e_seed.seed_playwright`, and writes the
+manifest to `web/tests/e2e/.seed-data.json` (gitignored).
 
 ## Folder layout
 
-- `specs/` — six hand-written spec files (`01-…06-`), one per `docs/ui/0N-*.md` feature.
-- `features/` — Gherkin `.feature` files (BDD scenarios). Compiled by playwright-bdd.
-- `steps/` — Step definitions (`bdd.ts` wires `createBdd(authTest)`; `*.steps.ts` are domain steps).
-- `pages/` — Page Objects. Both specs and steps use these; selectors do not appear in spec/step files.
-- `support/` — `auth.ts` (role contexts), `api-stubs.ts` (route mocks), `seed-data.ts` (typed manifest re-export), `hooks.ts` (BDD Before/After).
-- `fixtures/test.ts` — legacy re-export kept so the existing `specs/0N-*.spec.ts` keep working; new tests should not import from here.
-
-## Test scenarios
-
-`docs/ui/test-scenarios/0N-*.test-scenarios.md` is the assertion-level spec for
-each feature. Per-feature opsx changes implement skipped tests by reading those
-files plus the corresponding `docs/ui/0N-*.md` UI description.
+- `features/` — Gherkin `.feature` files (BDD scenarios), authoring entry point.
+- `steps/` — Step definitions. `bdd.ts` wires `createBdd(authTest)`;
+  `*.steps.ts` are domain steps that delegate to Page Objects.
+- `pages/` — Page Objects. Testid-based locators only; selectors do not
+  appear in feature or step files.
+- `support/` — `auth.ts` (role contexts), `api-stubs.ts` (route mocks),
+  `seed-data.ts` (typed manifest re-export), `hooks.ts` (BDD Before/After,
+  `@todo` skip), `console-errors.ts` (`trackConsoleErrors` /
+  `expectNoConsoleErrors`).
 
 ## CI lanes
 
@@ -45,16 +47,21 @@ files plus the corresponding `docs/ui/0N-*.md` UI description.
 | `playwright-nightly.yml` | cron 06:00 UTC + manual | chromium + firefox | no (stub) |
 | `playwright-live.yml` | manual + `live-llm` PR label | chromium | yes (gated env) |
 
-All three workflows run both the legacy `chromium`/`firefox` projects and the BDD `bdd-chromium`/`bdd-firefox` projects in the same Playwright invocation, so migrated `.feature` scenarios stay in CI coverage. Locally, run them via `--project=bdd-chromium` (or omit `--project` to run everything).
+The `chromium`/`firefox` projects are kept for CI workflow compatibility
+but are now empty (the `specs/` directory they pointed at is gone, so
+they list 0 tests). The `bdd-chromium`/`bdd-firefox` projects carry every
+PTS scenario. CI workflows continue to invoke both project sets in one
+Playwright run, so no workflow change is required.
 
 ## Debugging
 
 - Trace viewer: `npx playwright show-trace test-results/*/trace.zip`.
 - HTML report: `npx playwright show-report` after a run.
-- Add `--debug` to step through a single test in inspector mode.
+- Add `--debug` to step through a single scenario in inspector mode.
 
-## Adding a new test
+## Authoring a new scenario
 
-For an existing feature (01–06): edit the relevant `specs/0N-*.spec.ts` and the
-matching `docs/ui/test-scenarios/0N-*.test-scenarios.md`. Add Page Object methods
-when needed. Do **not** put raw selectors in spec files.
+See `web/tests/e2e/features/README.md` for the full per-area workflow,
+binding alignment table, tag conventions, and `@todo` placeholder
+pattern. The companion CLI prompt at `.claude/prompts/e2e-feature.prompt.md`
+summarises the four-layer flow.

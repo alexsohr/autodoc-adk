@@ -2,22 +2,7 @@ import type { Page } from '@playwright/test';
 import { expect } from '@playwright/test';
 import { Then, When } from './bdd';
 import { HealthPage } from '../pages/admin/HealthPage';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Console-error tracking
-//
-// PTS-3.1's acceptance criteria from docs/ui/00-index.md ends with "no console
-// errors". To assert that without touching support/hooks.ts, we keep a per-Page
-// WeakMap of error messages. The "When I open the System Health page" step
-// registers a `console` listener BEFORE navigation, so any error logged during
-// initial render is captured. The "Then no console errors are logged" step
-// reads from the same WeakMap.
-//
-// WeakMap (rather than a module-level Map) keyed on the Page lets entries
-// disappear automatically when the BrowserContext closes — important because
-// the @as-developer fixture builds a fresh context per scenario.
-// ─────────────────────────────────────────────────────────────────────────────
-const CONSOLE_ERRORS = new WeakMap<Page, string[]>();
+import { trackConsoleErrors, expectNoConsoleErrors } from '../support/console-errors';
 
 // /admin/health upstream depends on a live Prefect server with seeded work
 // pools. In the CI/local stub environment Prefect isn't reachable, so the
@@ -45,13 +30,7 @@ const ADMIN_HEALTH_SHIM = {
 };
 
 async function gotoHealthWithConsoleTracking(page: Page): Promise<void> {
-  const errors: string[] = [];
-  CONSOLE_ERRORS.set(page, errors);
-  page.on('console', (msg) => {
-    if (msg.type() === 'error') {
-      errors.push(msg.text());
-    }
-  });
+  trackConsoleErrors(page);
   // Match XHR/fetch requests to the API endpoint only — NOT the SPA route at
   // `/admin/health` that we're about to navigate to. We narrow by request type
   // (`xhr`/`fetch`) and by path equality to dodge the URL collision.
@@ -184,9 +163,5 @@ Then(
 );
 
 Then('no console errors were logged during page load', async ({ page }) => {
-  const errors = CONSOLE_ERRORS.get(page) ?? [];
-  expect(
-    errors,
-    `Expected no console errors during /admin/health load, got:\n${errors.join('\n')}`,
-  ).toEqual([]);
+  expectNoConsoleErrors(page);
 });

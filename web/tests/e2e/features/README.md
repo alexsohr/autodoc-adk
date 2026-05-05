@@ -7,14 +7,28 @@ Features in this directory are the **executable behavioral spec** for the AutoDo
 Every `Scenario:` MUST correspond to a PTS-N.M scenario in
 `docs/ui/00-index.md` § Page-Level Test Results. The mapping is:
 
-| .feature file                           | UI doc                                                | PTS scenarios |
-|-----------------------------------------|-------------------------------------------------------|---------------|
-| 01-repo-list-and-nav.feature            | docs/ui/01-repository-list-and-navigation.md          | PTS-1.1..1.6  |
-| 02-workspace-overview.feature (TBD)     | docs/ui/02-repo-workspace-overview.md                 | PTS-2.1, 2.2  |
-| 03-docs-search-chat.feature (TBD)       | docs/ui/03-repo-workspace-docs-search-chat.md         | PTS-2.3, 2.4  |
-| 04-jobs-quality-settings.feature (TBD)  | docs/ui/04-repo-workspace-jobs-quality-settings.md    | PTS-2.5..2.7  |
-| 05-admin-health-and-jobs.feature (TBD)  | docs/ui/05-admin-health-and-jobs.md                   | PTS-3.1, 3.2, 3.5 |
-| 06-admin-usage-and-mcp.feature (TBD)    | docs/ui/06-admin-usage-and-mcp.md                     | PTS-3.3, 3.4  |
+| .feature file                       | UI doc                                                | PTS scenarios     |
+|-------------------------------------|-------------------------------------------------------|-------------------|
+| 01-repo-list-and-nav.feature ✅     | docs/ui/01-repository-list-and-navigation.md          | PTS-1.1..1.6      |
+| 02-workspace-overview.feature ✅    | docs/ui/02-repo-workspace-overview.md                 | PTS-2.1, 2.2      |
+| 03-docs-search-chat.feature ✅      | docs/ui/03-repo-workspace-docs-search-chat.md         | PTS-2.3, 2.4      |
+| 04-jobs-quality-settings.feature ✅ | docs/ui/04-repo-workspace-jobs-quality-settings.md    | PTS-2.5..2.7      |
+| 05-admin-health-and-jobs.feature ✅ | docs/ui/05-admin-health-and-jobs.md                   | PTS-3.1, 3.2, 3.5 |
+| 06-admin-usage-and-mcp.feature ✅   | docs/ui/06-admin-usage-and-mcp.md                     | PTS-3.3, 3.4      |
+
+## Migration status
+
+All six areas are migrated. The legacy `web/tests/e2e/specs/` directory
+and the `fixtures/` re-export shim have been retired (PR 07, cleanup).
+Of the 18 scenarios authored across the six features:
+
+- **Implemented and runnable today** (6): PTS-1.1, PTS-2.1, PTS-2.4,
+  PTS-2.5, PTS-3.1, PTS-3.3. These pass against the live UI under
+  `--project=bdd-chromium` (and `bdd-firefox`).
+- **`@todo` placeholders** (12): the remaining PTS scenarios in each
+  area. The Gherkin steps fully encode the acceptance criteria — they
+  are the executable spec waiting for wiring. A separate post-migration
+  backlog (one PR per scenario) lifts the `@todo` tag.
 
 ## Conventions
 
@@ -46,10 +60,10 @@ These placeholders never execute (the `@todo` `Before` hook calls `test.skip()` 
 
 ## Authoring a new feature (per-area PR)
 
-1. Pick the next `0N-*.feature` in the table above.
+1. Pick the next `0N-*.feature` in the table above (or open an existing
+   one to lift a `@todo` placeholder).
 2. Read the UI doc and 00-index.md for that area's PTS scenarios.
 3. Write Scenarios — title format above, steps mirror the acceptance criteria 1:1.
 4. Add domain step definitions in `web/tests/e2e/steps/<area>.steps.ts`, reusing common steps where possible.
 5. If a step is needed but cannot be implemented yet, leave the scenario `@todo` and provide a placeholder step body (`// @todo: …`).
-6. Delete the corresponding `web/tests/e2e/specs/0N-*.spec.ts` in the same PR.
-7. PR description must include the alignment checklist from the plan: `/Users/alex/.claude/plans/i-have-a-problem-refactored-riddle.md` § Doc-alignment verification.
+6. PR description must include the alignment checklist from the plan: `/Users/alex/.claude/plans/i-have-a-problem-refactored-riddle.md` § Doc-alignment verification.
