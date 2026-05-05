@@ -24,7 +24,7 @@ Every `Scenario:` MUST correspond to a PTS-N.M scenario in
   - `@smoke` — run on every CI lane.
   - `@todo` — auto-skipped by `support/hooks.ts`. Use for unimplemented scenarios. The auto-skip fires in a `Before` hook before any step body runs, so placeholder step definitions for `@todo` scenarios are never executed.
   - `@known-gap` — scenario covers a documented gap from 00-index.md § Known Gaps; cite the gap row inline as a Gherkin comment.
-  - `@as-developer` / `@as-viewer` — marker for the role-aware fixture the scenario should run as. (Wiring is opt-in; today these are markers only.)
+  - `@as-developer` / `@as-viewer` — opt the scenario into a role-specific `page` fixture. The override in `support/auth.ts` reads `$tags` and constructs a fresh `BrowserContext` with `X-Forwarded-Role: developer` (or `viewer`) for the duration of the scenario; absence of either tag preserves the admin default from `playwright.config.ts:use.extraHTTPHeaders`. Existing steps need no changes — they keep destructuring `page` and receive the role-aware page automatically. There is no `@as-admin` tag because admin is the implicit default.
   - `@area-<name>` — at the Feature level, groups scenarios by UI area for `--grep` filtering.
 - **Selectors**: NEVER appear in step text or step definitions. Live in `web/tests/e2e/pages/*.ts` only. Steps call PO methods/locators.
 - **Seed data**: parameterize as `{string}` in scenarios; resolve via `REPOS.<symbolicName>` from `support/seed-data.ts` in step definitions. Example: a scenario step `the "digitalClock" repository card is visible` resolves `digitalClock` to `REPOS.digitalClock` and asserts on `repos.card(REPOS.digitalClock.name)`.
