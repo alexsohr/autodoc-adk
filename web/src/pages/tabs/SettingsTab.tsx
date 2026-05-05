@@ -82,7 +82,7 @@ function GeneralSettings({ repoId }: { repoId: string }): ReactNode {
       data={repo}
       onRetry={() => void refetch()}
     >
-      <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+      <div data-testid="settings-section-general" style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
         {/* Read-only info */}
         <div style={sectionStyle}>
           <h3 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "1rem" }}>Repository Info</h3>
@@ -519,7 +519,7 @@ function DangerZone({ repoId }: { repoId: string }): ReactNode {
   const [showUnregister, setShowUnregister] = useState(false);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+    <div data-testid="settings-section-danger-zone" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
       <div
         style={{
           background: "color-mix(in srgb, var(--autodoc-error-container) 30%, transparent)",
@@ -638,6 +638,7 @@ function SettingsTabContent(): ReactNode {
           return (
             <button
               key={tab.key}
+              data-testid={`settings-subtab-${tab.label.toLowerCase().replace(/\s+/g, "-")}`}
               onClick={() => setActiveTab(tab.key)}
               style={{
                 padding: "0.5rem 1rem",

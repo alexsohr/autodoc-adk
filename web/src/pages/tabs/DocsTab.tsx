@@ -124,6 +124,7 @@ function ScopeSelector({
         Documentation Scope
       </label>
       <select
+        data-testid="docs-scope-selector"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={isLoading || !scopes?.length}
@@ -298,7 +299,7 @@ function DocTree({
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+    <div data-testid="docs-tree" style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
       {structure.sections.map((section) => (
         <DocTreeSection
           key={section.title}
@@ -433,6 +434,7 @@ function MermaidBlock({ code }: { code: string }): ReactNode {
   return (
     <div
       ref={containerRef}
+      data-testid="docs-mermaid"
       style={{
         background: "var(--autodoc-surface-container-low)",
         borderRadius: "12px",
@@ -793,6 +795,7 @@ function PageContent({
               pageTitle={page.title}
             />
             <div
+              data-testid="docs-quality-pill"
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -882,6 +885,7 @@ function PageContent({
             >
               {prevPage ? (
                 <button
+                  data-testid="docs-nav-prev"
                   onClick={() =>
                     navigate(
                       `/repos/${repoId}/docs/${encodeURIComponent(prevPage.pageKey)}`,
@@ -934,6 +938,7 @@ function PageContent({
               )}
               {nextPage ? (
                 <button
+                  data-testid="docs-nav-next"
                   onClick={() =>
                     navigate(
                       `/repos/${repoId}/docs/${encodeURIComponent(nextPage.pageKey)}`,

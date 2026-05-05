@@ -2,6 +2,14 @@ import type { Page, Locator } from '@playwright/test';
 
 type FilterPill = 'All' | 'Running' | 'Completed' | 'Failed' | 'Pending';
 
+const PILL_VALUE: Record<FilterPill, string> = {
+  'All':       'all',
+  'Running':   'running',
+  'Completed': 'completed',
+  'Failed':    'failed',
+  'Pending':   'pending',
+};
+
 export class AllJobsPage {
   constructor(private readonly page: Page) {}
 
@@ -11,10 +19,10 @@ export class AllJobsPage {
   }
 
   readonly heading:     Locator = this.page.getByRole('heading', { name: /^All Jobs$/ });
-  readonly jobsTable:   Locator = this.page.getByRole('table');
-  readonly searchInput: Locator = this.page.getByPlaceholder(/Search by repository/i);
+  readonly jobsTable:   Locator = this.page.getByTestId('all-jobs-table');
+  readonly searchInput: Locator = this.page.getByTestId('all-jobs-search');
 
   filterPill(name: FilterPill): Locator {
-    return this.page.getByRole('button', { name: new RegExp(`^${name}\\(`) });
+    return this.page.getByTestId(`filter-tab-${PILL_VALUE[name]}`);
   }
 }

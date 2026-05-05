@@ -249,6 +249,7 @@ export default function AllJobsPage(): ReactNode {
         <FilterBar options={filterOptions} value={statusFilter} onChange={setStatusFilter} />
         <div style={{ flex: 1, minWidth: "200px" }}>
           <input
+            data-testid="all-jobs-search"
             type="text"
             placeholder="Search by repository, branch, or job ID..."
             value={searchTerm}
@@ -278,13 +279,15 @@ export default function AllJobsPage(): ReactNode {
         onRetry={() => void refetch()}
         emptyMessage="No jobs found. Trigger a documentation generation to get started."
       >
-        <DataTable<JobRow>
-          columns={columns}
-          data={filteredJobs}
-          pageSize={15}
-          expandableRow={expandableRow}
-          emptyMessage="No jobs match your filters."
-        />
+        <div data-testid="all-jobs-table">
+          <DataTable<JobRow>
+            columns={columns}
+            data={filteredJobs}
+            pageSize={15}
+            expandableRow={expandableRow}
+            emptyMessage="No jobs match your filters."
+          />
+        </div>
       </SectionErrorBoundary>
     </div>
   );

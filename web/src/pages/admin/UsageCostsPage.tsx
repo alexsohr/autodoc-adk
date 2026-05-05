@@ -117,6 +117,7 @@ export default function UsageCostsPage(): ReactNode {
             return (
               <button
                 key={opt.value}
+                data-testid={`usage-range-${opt.label.toLowerCase().replace(/\s+/g, "-")}`}
                 onClick={() => setRange(opt.value)}
                 style={{
                   padding: "0.375rem 0.875rem",
@@ -248,6 +249,7 @@ export default function UsageCostsPage(): ReactNode {
 
       {/* Cost efficiency tip */}
       <div
+        data-testid="usage-cost-efficiency-tip"
         style={{
           background: "var(--autodoc-info-bg)",
           borderRadius: "12px",
