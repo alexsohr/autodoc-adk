@@ -50,11 +50,14 @@ export default defineConfig({
     },
   },
   projects: [
-    // Existing hand-written specs (specs/0N-*.spec.ts) — unchanged behavior.
-    { name: 'specs-chromium', testDir: specsTestDir, use: { ...devices['Desktop Chrome'] } },
-    { name: 'specs-firefox',  testDir: specsTestDir, use: { ...devices['Desktop Firefox'] } },
+    // Legacy hand-written specs (specs/0N-*.spec.ts).
+    // Names match what CI workflows invoke (--project=chromium / --project=firefox)
+    // — do not rename without updating .github/workflows/.
+    { name: 'chromium', testDir: specsTestDir, use: { ...devices['Desktop Chrome'] } },
+    { name: 'firefox',  testDir: specsTestDir, use: { ...devices['Desktop Firefox'] } },
     // BDD scenarios generated from features/*.feature.
-    { name: 'bdd-chromium',   testDir: bddTestDir,   use: { ...devices['Desktop Chrome'] } },
-    { name: 'bdd-firefox',    testDir: bddTestDir,   use: { ...devices['Desktop Firefox'] } },
+    // Not yet wired into CI — opt-in locally via --project=bdd-chromium.
+    { name: 'bdd-chromium', testDir: bddTestDir, use: { ...devices['Desktop Chrome'] } },
+    { name: 'bdd-firefox',  testDir: bddTestDir, use: { ...devices['Desktop Firefox'] } },
   ],
 });

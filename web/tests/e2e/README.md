@@ -45,6 +45,8 @@ files plus the corresponding `docs/ui/0N-*.md` UI description.
 | `playwright-nightly.yml` | cron 06:00 UTC + manual | chromium + firefox | no (stub) |
 | `playwright-live.yml` | manual + `live-llm` PR label | chromium | yes (gated env) |
 
+The BDD projects (`bdd-chromium`, `bdd-firefox`) are not yet wired into CI; run them locally via `--project=bdd-chromium` (or omit `--project` to run everything).
+
 ## Debugging
 
 - Trace viewer: `npx playwright show-trace test-results/*/trace.zip`.
