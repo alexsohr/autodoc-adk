@@ -325,6 +325,7 @@ function buildCompletedColumns(_repoId: string) {
         return (
           <Link
             to={`jobs/${j.id}`}
+            data-testid="jobs-row-details"
             style={{
               color: "var(--autodoc-primary)",
               fontWeight: 500,
@@ -572,6 +573,7 @@ export default function JobsTab(): ReactNode {
               <div style={{ display: "flex", gap: "0.5rem" }}>
                 <RoleGate roles={["developer", "admin"]}>
                   <button
+                    data-testid="jobs-row-retry"
                     onClick={(e) => {
                       e.stopPropagation();
                       handleRetry(j.id);
@@ -592,6 +594,7 @@ export default function JobsTab(): ReactNode {
                 </RoleGate>
                 <Link
                   to={`jobs/${j.id}`}
+                  data-testid="jobs-row-details"
                   style={{
                     color: "var(--autodoc-primary)",
                     fontWeight: 500,

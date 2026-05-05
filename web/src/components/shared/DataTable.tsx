@@ -99,6 +99,7 @@ export function DataTable<T extends Record<string, unknown>>({
             {columns.map((col) => (
               <th
                 key={col.key}
+                data-testid={`datatable-header-${col.key}`}
                 onClick={col.sortable ? () => handleSort(col.key) : undefined}
                 style={{
                   padding: "0.75rem 1rem",
@@ -175,6 +176,7 @@ export function DataTable<T extends Record<string, unknown>>({
 
       {/* Pagination footer */}
       <div
+        data-testid="datatable-pagination"
         style={{
           display: "flex",
           alignItems: "center",
