@@ -4,26 +4,6 @@ import { WorkspacePage } from '../pages/WorkspacePage';
 import { SearchTab } from '../pages/SearchTab';
 import { DocsTab } from '../pages/DocsTab';
 import { stubSearch503 } from '../support/api-stubs';
-import { REPOS, type SeedRepo } from '../support/seed-data';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Seed lookup helper
-//
-// Mirrors the pattern in repo-list.steps.ts / workspace.steps.ts: scenarios
-// reference repositories by symbolic seed name (e.g. "digitalClock"), not by
-// their displayed `name`. We resolve the symbolic name to the seed record
-// here so step text stays stable when displayed names or generated IDs change.
-// ─────────────────────────────────────────────────────────────────────────────
-type SeedKey = keyof typeof REPOS;
-
-function resolveSeedRepo(symbolic: string): SeedRepo {
-  if (!(symbolic in REPOS)) {
-    throw new Error(
-      `Unknown seed repo "${symbolic}". Known keys: ${Object.keys(REPOS).join(', ')}`,
-    );
-  }
-  return REPOS[symbolic as SeedKey];
-}
 
 type TabName = 'Overview' | 'Docs' | 'Search' | 'Chat' | 'Jobs' | 'Quality' | 'Settings';
 type SearchMode = 'Hybrid' | 'Semantic' | 'Full Text';
@@ -197,8 +177,3 @@ Then('the doc viewer updates to show that page', async () => {
   // @todo: implement when PTS-2.3 is wired up
   await Promise.resolve();
 });
-
-// resolveSeedRepo is referenced by the @todo placeholders above when they're
-// implemented (e.g. to look up a known page slug); silence unused-export lint
-// here since the import path is what matters.
-void resolveSeedRepo;

@@ -21,8 +21,6 @@ const bddTestDir = defineBddConfig({
   missingSteps: 'fail-on-gen',
 });
 
-const specsTestDir = path.resolve(__dirname, 'specs');
-
 export default defineConfig({
   // Per-project testDir below — top-level testDir intentionally omitted.
   timeout: 30_000,
@@ -50,14 +48,10 @@ export default defineConfig({
     },
   },
   projects: [
-    // Legacy hand-written specs (specs/0N-*.spec.ts).
+    // BDD scenarios generated from features/*.feature into .features-gen/.
     // Names match what CI workflows invoke (--project=chromium / --project=firefox)
     // — do not rename without updating .github/workflows/.
-    { name: 'chromium', testDir: specsTestDir, use: { ...devices['Desktop Chrome'] } },
-    { name: 'firefox',  testDir: specsTestDir, use: { ...devices['Desktop Firefox'] } },
-    // BDD scenarios generated from features/*.feature.
-    // Not yet wired into CI — opt-in locally via --project=bdd-chromium.
-    { name: 'bdd-chromium', testDir: bddTestDir, use: { ...devices['Desktop Chrome'] } },
-    { name: 'bdd-firefox',  testDir: bddTestDir, use: { ...devices['Desktop Firefox'] } },
+    { name: 'chromium', testDir: bddTestDir, use: { ...devices['Desktop Chrome'] } },
+    { name: 'firefox',  testDir: bddTestDir, use: { ...devices['Desktop Firefox'] } },
   ],
 });

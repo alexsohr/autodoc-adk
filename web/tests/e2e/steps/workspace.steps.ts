@@ -1,26 +1,7 @@
 import { expect } from '@playwright/test';
 import { Given, Then, When } from './bdd';
 import { WorkspacePage } from '../pages/WorkspacePage';
-import { REPOS, type SeedRepo } from '../support/seed-data';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Seed lookup helper
-//
-// Mirrors the pattern in repo-list.steps.ts: scenarios reference repositories
-// by symbolic seed name (e.g. "digitalClock"), not by their displayed `name`.
-// We resolve the symbolic name to the seed record here so step text stays
-// stable when displayed names or generated IDs change.
-// ─────────────────────────────────────────────────────────────────────────────
-type SeedKey = keyof typeof REPOS;
-
-function resolveSeedRepo(symbolic: string): SeedRepo {
-  if (!(symbolic in REPOS)) {
-    throw new Error(
-      `Unknown seed repo "${symbolic}". Known keys: ${Object.keys(REPOS).join(', ')}`,
-    );
-  }
-  return REPOS[symbolic as SeedKey];
-}
+import { resolveSeedRepo } from '../support/seed-data';
 
 type TabName = 'Overview' | 'Docs' | 'Search' | 'Chat' | 'Jobs' | 'Quality' | 'Settings';
 type MetricCardName = 'Doc Pages' | 'Avg Quality' | 'Scopes' | 'Last Generated';

@@ -1,25 +1,4 @@
 import { Then, When } from './bdd';
-import { REPOS, type SeedRepo } from '../support/seed-data';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Seed lookup helper
-//
-// PTS-2.7 placeholders don't reference a repo today, but the helper is kept
-// here for symmetry with other steps files so future Settings scenarios can
-// resolve symbolic seed names without a refactor. Three local copies (here,
-// in workspace.steps.ts, in docs.steps.ts) are intentional for this PR; lifting
-// to a shared support module is a follow-up.
-// ─────────────────────────────────────────────────────────────────────────────
-type SeedKey = keyof typeof REPOS;
-
-function resolveSeedRepo(symbolic: string): SeedRepo {
-  if (!(symbolic in REPOS)) {
-    throw new Error(
-      `Unknown seed repo "${symbolic}". Known keys: ${Object.keys(REPOS).join(', ')}`,
-    );
-  }
-  return REPOS[symbolic as SeedKey];
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PTS-2.7 — Placeholder steps (Settings tab sub-navigation)
@@ -103,5 +82,3 @@ Then(
     await Promise.resolve();
   },
 );
-
-void resolveSeedRepo;

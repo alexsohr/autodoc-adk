@@ -3,25 +3,7 @@ import { Then, When } from './bdd';
 import { RepoListPage } from '../pages/RepoListPage';
 import { TopBar } from '../pages/TopBar';
 import { Sidebar } from '../pages/Sidebar';
-import { REPOS, type SeedRepo } from '../support/seed-data';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Seed lookup helper
-//
-// Scenarios reference repositories by symbolic seed name (e.g. "digitalClock"),
-// not by their displayed `name`. We resolve the symbolic name to the seed
-// record here so step text stays stable when displayed names change.
-// ─────────────────────────────────────────────────────────────────────────────
-type SeedKey = keyof typeof REPOS;
-
-function resolveSeedRepo(symbolic: string): SeedRepo {
-  if (!(symbolic in REPOS)) {
-    throw new Error(
-      `Unknown seed repo "${symbolic}". Known keys: ${Object.keys(REPOS).join(', ')}`,
-    );
-  }
-  return REPOS[symbolic as SeedKey];
-}
+import { resolveSeedRepo } from '../support/seed-data';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PTS-1.1 — Implemented steps

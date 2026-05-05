@@ -35,3 +35,18 @@ function load(): SeedManifest {
 const _data = load();
 export const REPOS = _data.repos;
 export const JOBS = _data.jobs;
+
+export type SeedRepoKey = keyof typeof REPOS;
+
+// Scenarios reference repositories by symbolic seed name (e.g. "digitalClock"),
+// not by their displayed `name`. This helper resolves the symbolic name to the
+// seed record so step text stays stable when displayed names or generated IDs
+// change.
+export function resolveSeedRepo(symbolic: string): SeedRepo {
+  if (!(symbolic in REPOS)) {
+    throw new Error(
+      `Unknown seed repo "${symbolic}". Known keys: ${Object.keys(REPOS).join(', ')}`,
+    );
+  }
+  return REPOS[symbolic as SeedRepoKey];
+}

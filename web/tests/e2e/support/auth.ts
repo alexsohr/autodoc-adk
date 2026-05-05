@@ -1,8 +1,8 @@
 import type { Browser, Page } from '@playwright/test';
 // IMPORTANT: extend playwright-bdd's `test`, not @playwright/test's base.
 // createBdd() requires it. The bdd `test` is itself an extension of
-// @playwright/test, so existing specs/0N-*.spec.ts that import via
-// fixtures/test.ts continue to work unchanged.
+// @playwright/test. All step files import this via support/auth.ts → steps/bdd.ts;
+// the legacy fixtures/test.ts re-export was removed when specs/ retired (PR de1a99a5).
 import { test as base } from 'playwright-bdd';
 
 export type Role = 'admin' | 'developer' | 'viewer';

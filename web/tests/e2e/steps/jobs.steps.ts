@@ -1,30 +1,6 @@
 import { expect } from '@playwright/test';
 import { Then } from './bdd';
 import { JobsTab } from '../pages/JobsTab';
-import { REPOS, type SeedRepo } from '../support/seed-data';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Seed lookup helper
-//
-// Mirrors the pattern in repo-list.steps.ts / workspace.steps.ts / docs.steps.ts:
-// scenarios reference repositories by symbolic seed name. PTS-2.5 doesn't
-// reference a repo directly in any Then step (the scenario opens the workspace
-// via the Given step in workspace.steps.ts), so we keep the helper here as a
-// silent re-export only — it lets future Jobs scenarios stay self-contained.
-//
-// The three local copies (here, in workspace.steps.ts, in docs.steps.ts) are
-// intentional for this PR; lifting to a shared support module is a follow-up.
-// ─────────────────────────────────────────────────────────────────────────────
-type SeedKey = keyof typeof REPOS;
-
-function resolveSeedRepo(symbolic: string): SeedRepo {
-  if (!(symbolic in REPOS)) {
-    throw new Error(
-      `Unknown seed repo "${symbolic}". Known keys: ${Object.keys(REPOS).join(', ')}`,
-    );
-  }
-  return REPOS[symbolic as SeedKey];
-}
 
 type FilterPillName = 'All' | 'Running' | 'Completed' | 'Failed' | 'Cancelled' | 'Pending';
 type ColumnHeaderLabel = 'Status' | 'Mode' | 'Branch' | 'Created' | 'Updated' | 'PR';
@@ -128,8 +104,3 @@ Then(
     await expect(jobs.failedSectionPagination).toContainText(/Showing 1.+5 of 13/);
   },
 );
-
-// resolveSeedRepo currently unused at runtime in this file — keep the import
-// + helper colocated for symmetry with other steps files and to silence the
-// unused-export lint noise without adding the helper to support/.
-void resolveSeedRepo;
