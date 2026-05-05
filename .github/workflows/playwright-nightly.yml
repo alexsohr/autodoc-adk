@@ -62,11 +62,10 @@ jobs:
       - working-directory: web
         run: nohup npx vite preview --port 4173 --host 0.0.0.0 > preview.log 2>&1 &
       - working-directory: web
-        # Runs both legacy specs (chromium/firefox) and BDD-generated
-        # scenarios (bdd-chromium/bdd-firefox) per matrix entry, in a single
-        # invocation. Keeps the matrix at 2 entries while doubling lane
-        # coverage during the migration.
-        run: npx playwright test --config tests/e2e/playwright.config.ts --project=${{ matrix.project }} --project=bdd-${{ matrix.project }}
+        # Post-migration: the chromium/firefox projects ARE the BDD projects
+        # (legacy bdd-* names were renamed back to chromium/firefox when
+        # specs/ retired). Matrix entry directly names the project.
+        run: npx playwright test --config tests/e2e/playwright.config.ts --project=${{ matrix.project }}
       - if: always()
         uses: actions/upload-artifact@v4
         with:

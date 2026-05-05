@@ -116,11 +116,10 @@ jobs:
         run: nohup npx vite preview --port 4173 --host 0.0.0.0 > preview.log 2>&1 &
       - name: Run Playwright
         working-directory: web
-        # Runs both the legacy specs/0N-*.spec.ts files (chromium) and the
-        # generated Gherkin scenarios in features/*.feature (bdd-chromium).
-        # As specs migrate to features, the chromium project shrinks and
-        # bdd-chromium grows; both names must stay until the migration ends.
-        run: npx playwright test --config tests/e2e/playwright.config.ts --project=chromium --project=bdd-chromium
+        # Runs the BDD scenarios from features/*.feature. Post-migration the
+        # chromium project IS the BDD project (legacy bdd-chromium was
+        # renamed back to chromium when specs/ retired).
+        run: npx playwright test --config tests/e2e/playwright.config.ts --project=chromium
       - if: always()
         uses: actions/upload-artifact@v4
         with:

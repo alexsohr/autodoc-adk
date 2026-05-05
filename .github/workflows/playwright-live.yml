@@ -59,10 +59,10 @@ jobs:
       - working-directory: web
         run: nohup npx vite preview --port 4173 --host 0.0.0.0 > preview.log 2>&1 &
       - working-directory: web
-        # Runs only @live-tagged scenarios across both lanes (legacy specs
-        # and BDD features). Until any test or scenario is tagged @live,
+        # Runs only @live-tagged scenarios. Post-migration the chromium
+        # project IS the BDD project. Until any scenario is tagged @live,
         # this job runs zero tests by design (gated by --grep).
-        run: npx playwright test --config tests/e2e/playwright.config.ts --project=chromium --project=bdd-chromium --grep @live
+        run: npx playwright test --config tests/e2e/playwright.config.ts --project=chromium --grep @live
       - if: always()
         uses: actions/upload-artifact@v4
         with:
