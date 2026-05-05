@@ -84,7 +84,7 @@ export function TopBar({ sidebarCollapsed }: TopBarProps) {
             </div>
           )}
         </div>
-        <div className="topbar__user">
+        <div className="topbar__user" data-testid="topbar-user">
           <UserIcon size={1} />
           {user && (
             <span className="topbar__role">{user.role}</span>
